@@ -1,0 +1,157 @@
+import http from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { createStore } from './lib/store.mjs';
+import { cleanUrl, inspectProduct } from './lib/product.mjs';
+import { checkPrices } from './lib/alerts.mjs';
+import { askShoppingAssistant } from './lib/assistant.mjs';
+
+const root = fileURLToPath(new URL('.', import.meta.url));
+const password = process.env.APP_PASSWORD;
+const secret = process.env.SESSION_SECRET;
+const cronSecret = process.env.CRON_SECRET;
+if (!password || !secret || secret.length < 32 || !cronSecret || cronSecret.length < 32) {
+  console.error('Set APP_PASSWORD, SESSION_SECRET and CRON_SECRET in .env (secrets at least 32 characters).');
+  process.exit(1);
+}
+const store = createStore(process.env.DATA_DIR || join(root, 'data'));
+const limit = new Map();
+const equal = (a, b) => {
+  const left = Buffer.from(String(a)); const right = Buffer.from(String(b));
+  return left.length === right.length && timingSafeEqual(left, right);
+};
+const sign = value => createHmac('sha256', secret).update(value).digest('hex');
+const validSession = req => {
+  const value = /(?:^|;\s*)session=([^;]+)/.exec(req.headers.cookie || '')?.[1];
+  if (!value) return false;
+  const [expires, mac] = value.split('.');
+  return /^\d+$/.test(expires || '') && Number(expires) > Date.now() && equal(mac, sign(expires));
+};
+function json(res, status, data, headers = {}) {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers });
+  res.end(JSON.stringify(data));
+}
+async function body(req) {
+  let text = '';
+  for await (const part of req) {
+    text += part;
+    if (text.length > 12_000) throw new Error('Request too large.');
+  }
+  try { return JSON.parse(text); } catch { throw new Error('Invalid JSON.'); }
+}
+function sameOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try { return new URL(origin).host === req.headers.host && ['https:', 'http:'].includes(new URL(origin).protocol); }
+  catch { return false; }
+}
+function safeText(value, max) { return typeof value === 'string' ? value.trim().slice(0, max) : ''; }
+function target(value) {
+  if (value === '' || value == null) return null;
+  if (typeof value !== 'number' && !(typeof value === 'string' && /^\d+(?:\.\d{1,2})?$/.test(value.trim()))) throw new Error('Enter a valid target price.');
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0 || n > 999_999) throw new Error('Enter a positive target price.');
+  return Math.round(n * 100) / 100;
+}
+function discount(value) {
+  if (value === '' || value == null) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 1 || n > 90) throw new Error('Enter a discount from 1% to 90%.');
+  return Math.round(n);
+}
+const staticFiles = new Map([
+  ['/', ['index.html', 'text/html; charset=utf-8']],
+  ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/style.css', ['style.css', 'text/css; charset=utf-8']],
+  ['/manifest.webmanifest', ['manifest.webmanifest', 'application/manifest+json']],
+  ['/icon.svg', ['icon.svg', 'image/svg+xml']]
+]);
+
+export const server = http.createServer(async (req, res) => {
+  const path = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
+  try {
+    if (req.method === 'POST' && path === '/api/check-prices') {
+      if (!cronSecret || !equal(req.headers.authorization || '', `Bearer ${cronSecret}`)) return json(res, 401, { error: 'Unauthorized.' });
+      const result = await checkPrices(store, { email: {
+        to: process.env.ALERT_EMAIL, from: process.env.RESEND_FROM, key: process.env.RESEND_API_KEY
+      } });
+      return json(res, 200, result);
+    }
+    if (req.method === 'POST' && path === '/api/login') {
+      if (!sameOrigin(req)) return json(res, 403, { error: 'Invalid origin.' });
+      const ip = req.socket.remoteAddress || 'unknown';
+      const tries = limit.get(ip) || { count: 0, until: 0 };
+      if (tries.until > Date.now()) return json(res, 429, { error: 'Try again in a few minutes.' });
+      const input = await body(req);
+      if (!equal(input.password || '', password)) {
+        tries.count += 1;
+        if (tries.count >= 5) { tries.until = Date.now() + 15 * 60_000; tries.count = 0; }
+        limit.set(ip, tries);
+        return json(res, 401, { error: 'Incorrect password.' });
+      }
+      limit.delete(ip);
+      const expires = String(Date.now() + 30 * 24 * 60 * 60_000);
+      const secure = req.headers['x-forwarded-proto'] === 'https' || req.socket.encrypted ? '; Secure' : '';
+      return json(res, 200, { ok: true }, { 'set-cookie': `session=${expires}.${sign(expires)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secure}` });
+    }
+    if (req.method === 'POST' && path === '/api/logout') {
+      if (!sameOrigin(req)) return json(res, 403, { error: 'Invalid origin.' });
+      return json(res, 200, { ok: true }, { 'set-cookie': 'session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
+    }
+    if (path.startsWith('/api/')) {
+      if (!validSession(req)) return json(res, 401, { error: 'Sign in to see your saved items.' });
+      if (!sameOrigin(req)) return json(res, 403, { error: 'Invalid origin.' });
+      if (req.method === 'GET' && path === '/api/config') return json(res, 200, {
+        assistant: Boolean(process.env.OPENAI_API_KEY), alerts: Boolean(process.env.ALERT_EMAIL && process.env.RESEND_API_KEY && process.env.RESEND_FROM)
+      });
+      if (req.method === 'GET' && path === '/api/items') return json(res, 200, { items: store.list() });
+      if (req.method === 'POST' && path === '/api/items') {
+        const input = await body(req);
+        const url = cleanUrl(input.url);
+        const existing = store.byUrl(url);
+        if (existing) return json(res, 200, { item: existing, existing: true });
+        let details = {}, warning = null;
+        try { details = await inspectProduct(url); }
+        catch { warning = 'Saved the link. The store did not provide product details, so add a title and check prices manually.'; }
+        const title = safeText(input.title, 180) || details.title || new URL(url).hostname;
+        const item = store.add({ url, title, note: safeText(input.note, 500), ...details, title,
+          target_price: target(input.target_price), discount_percent: discount(input.discount_percent) });
+        return json(res, 201, { item, warning });
+      }
+      const match = /^\/api\/items\/([\w-]+)$/.exec(path);
+      if (match && req.method === 'PATCH') {
+        const item = store.get(match[1]); if (!item) return json(res, 404, { error: 'Item not found.' });
+        const input = await body(req); const changes = {};
+        if (Object.hasOwn(input, 'title')) { changes.title = safeText(input.title, 180); if (!changes.title) throw new Error('Title cannot be empty.'); }
+        if (Object.hasOwn(input, 'note')) changes.note = safeText(input.note, 500);
+        if (Object.hasOwn(input, 'target_price')) { changes.target_price = target(input.target_price); changes.last_notified_at = null; }
+        if (Object.hasOwn(input, 'discount_percent')) { changes.discount_percent = discount(input.discount_percent); changes.last_notified_at = null; }
+        return json(res, 200, { item: store.update(item.id, changes) });
+      }
+      if (match && req.method === 'DELETE') return json(res, store.remove(match[1]) ? 200 : 404, { ok: true });
+      if (req.method === 'POST' && path === '/api/ask') {
+        const input = await body(req);
+        const answer = await askShoppingAssistant(store.list(), input.question, process.env.OPENAI_API_KEY, process.env.OPENAI_MODEL);
+        return json(res, 200, { answer });
+      }
+      return json(res, 404, { error: 'Not found.' });
+    }
+    if (req.method === 'GET' && staticFiles.has(path)) {
+      const [file, type] = staticFiles.get(path);
+      const bytes = await readFile(join(root, 'public', file));
+      res.writeHead(200, { 'content-type': type, 'cache-control': file === 'index.html' ? 'no-store' : 'public, max-age=3600', 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'content-security-policy': "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'" });
+      res.end(bytes); return;
+    }
+    json(res, 404, { error: 'Not found.' });
+  } catch (error) {
+    const clientError = /^(Enter |Paste |Use |Invalid |Request too large|Title cannot|Ask a question|Set OPENAI_API_KEY)/.test(error.message);
+    if (!clientError) console.error(error);
+    json(res, clientError ? 400 : 502, { error: clientError ? error.message : 'That request could not be completed.' });
+  }
+});
+
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(Number(process.env.PORT) || 3000, () => console.log(`Keep an Eye running on http://localhost:${server.address().port}`));
+}

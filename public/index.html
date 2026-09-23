@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f6f4ee">
+  <meta name="description" content="A quieter place to keep the things that caught your eye.">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <title>Keep an Eye · A considered shopping list</title>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Keep an Eye home"><span class="brandmark">◉</span><span>keep an eye<span class="period">.</span></span></a>
+      <button class="text-button" id="logout" hidden>Sign out</button>
+    </header>
+
+    <main id="app" hidden>
+      <section class="hero">
+        <div class="eyebrow"><span class="line"></span> THE PERSONAL EDIT</div>
+        <h1>Good finds deserve<br><em>a second look.</em></h1>
+        <p>Save what catches your eye. Let the right price find you.</p>
+        <button class="primary" id="open-add">Save a find <span aria-hidden="true">↗</span></button>
+      </section>
+
+      <section class="collection" aria-label="Your saved products">
+        <div class="section-top"><div><span class="eyebrow">YOUR EDIT</span><h2>Things worth keeping <span id="count"></span></h2></div><button class="subtle" id="refresh">Refresh ↻</button></div>
+        <div class="filters" aria-label="Filter products"><button class="filter active" data-filter="all">All finds</button><button class="filter" data-filter="watching">Price watch</button><button class="filter" data-filter="unpriced">Needs a price</button></div>
+        <div id="items" class="grid"></div>
+        <div id="empty" class="empty" hidden><div class="empty-mark">✳</div><h3>Your eye is the starting point.</h3><p>Save a link from any store. It can be a dress, a great gift, or something you’re simply curious about.</p><button class="secondary" id="empty-add">Save your first find <span>↗</span></button></div>
+      </section>
+
+      <section class="assistant-section" id="assistant-section">
+        <div><span class="eyebrow">A LITTLE PERSPECTIVE</span><h2>Ask about your edit.</h2><p>Compare what you’ve saved, find a theme, or decide what deserves your attention.</p></div>
+        <form id="ask-form" class="ask-form"><label for="question" class="sr-only">Your question</label><input id="question" maxlength="500" placeholder="Which saved pieces work together?" required><button type="submit" aria-label="Ask assistant">↗</button></form>
+        <div class="answer" id="answer" hidden></div>
+        <p class="fine" id="ai-note">A quiet second opinion, grounded in your saved finds.</p>
+      </section>
+    </main>
+
+    <section id="login-view" class="login-view" hidden><span class="eyebrow">YOUR PRIVATE EDIT</span><h1>A little space for<br><em>your good finds.</em></h1><p>Sign in to see your saved products.</p><form id="login-form"><label for="password">Password</label><div class="login-row"><input id="password" type="password" autocomplete="current-password" required><button class="primary" type="submit">Enter ↗</button></div></form><div id="login-error" class="error" role="alert"></div></section>
+    <footer><span>GOOD TASTE TAKES TIME.</span><span>A little project for shopping with intention.</span></footer>
+  </div>
+
+  <dialog id="editor"><form method="dialog" id="editor-form"><div class="dialog-head"><span class="eyebrow" id="dialog-label">A NEW FIND</span><button type="button" id="close-dialog" class="close" aria-label="Close">×</button></div><h2 id="dialog-title">Keep it in mind.</h2><p class="dialog-copy">Save the link now. Add a note or a price to watch whenever you like.</p><label for="product-url">Product link</label><input id="product-url" type="url" placeholder="https://store.com/product" required><label for="product-title">Name <span>(optional)</span></label><input id="product-title" maxlength="180" placeholder="We’ll try to find it for you"><label for="product-note">Your note <span>(optional)</span></label><textarea id="product-note" maxlength="500" rows="2" placeholder="Why did it catch your eye?"></textarea><label for="product-target">Alert me at <span id="currency-hint">(absolute price, optional)</span></label><input id="product-target" type="number" min="0.01" step="0.01" placeholder="e.g. 95.00"><label for="product-discount">Or alert me when it drops <span>(% from first price seen)</span></label><input id="product-discount" type="number" min="1" max="90" step="1" placeholder="e.g. 20%"><p class="fine">A daily check alerts when either condition is met. Confirm size and checkout price with the store.</p><div id="form-error" class="error" role="alert"></div><button class="primary wide" type="submit" id="save-button">Save this find ↗</button></form></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

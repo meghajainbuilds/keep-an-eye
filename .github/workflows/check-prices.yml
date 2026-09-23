@@ -1,0 +1,19 @@
+name: Daily price check
+on:
+  schedule:
+    - cron: '23 15 * * *'
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check saved products
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$APP_URL" && test -n "$CRON_SECRET"
+          curl --fail --show-error --silent --max-time 240 \
+            --request POST \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "${APP_URL%/}/api/check-prices"

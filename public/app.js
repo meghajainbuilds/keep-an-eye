@@ -5,6 +5,8 @@ const editor = $('#editor');
 let items = [];
 let editing = null;
 let filter = 'all';
+let category = 'All';
+let subcategory = 'All';
 let config = {};
 
 async function request(path, options = {}) {
@@ -47,6 +49,7 @@ function card(item) {
   article.append(visual);
   const body = node('div', 'card-body');
   body.append(node('div', 'merchant', new URL(item.url).hostname.replace(/^www\./, '')));
+  body.append(node('div', 'category-tag', `${item.category || 'Other'} · ${item.subcategory || 'Other'}`));
   body.append(node('h3', '', item.title));
   const prices = node('div', 'prices');
   if (item.price != null && item.currency) {
@@ -69,7 +72,25 @@ function card(item) {
 
 function render() {
   $('#count').textContent = items.length ? `(${items.length})` : '';
-  const visible = items.filter(i => filter === 'all' || filter === 'watching' && (i.target_price != null || i.discount_percent != null) || filter === 'unpriced' && i.price == null);
+  if (category !== 'All' && !items.some(i => i.category === category)) { category = 'All'; subcategory = 'All'; }
+  const categories = ['All', ...Object.keys(config.categories || {}).filter(name => items.some(i => i.category === name))];
+  $('#category-filters').replaceChildren(...categories.map(name => {
+    const count = name === 'All' ? items.length : items.filter(i => i.category === name).length;
+    const button = action(`${name} (${count})`, () => { category = name; subcategory = 'All'; render(); }, `filter${category === name ? ' active' : ''}`);
+    button.setAttribute('aria-pressed', String(category === name)); return button;
+  }));
+  const subs = category === 'All' ? [] : [...new Set(items.filter(i => i.category === category).map(i => i.subcategory || 'Other'))];
+  $('#subcategory-filters').hidden = !subs.length;
+  $('#subcategory-filters').replaceChildren(...['All', ...subs].map(name => {
+    const button = action(name, () => { subcategory = name; render(); }, `filter${subcategory === name ? ' active' : ''}`);
+    button.setAttribute('aria-pressed', String(subcategory === name)); return button;
+  }));
+  const search = $('#collection-search').value.trim().toLocaleLowerCase();
+  const visible = items.filter(i =>
+    (category === 'All' || i.category === category) &&
+    (subcategory === 'All' || i.subcategory === subcategory) &&
+    (filter === 'all' || filter === 'watching' && (i.target_price != null || i.discount_percent != null) || filter === 'unpriced' && i.price == null) &&
+    (!search || [i.title, i.description, i.note, i.url].some(value => String(value || '').toLocaleLowerCase().includes(search))));
   $('#items').replaceChildren(...visible.map(card));
   $('#empty').hidden = items.length !== 0 || filter !== 'all';
   if (items.length && !visible.length) $('#items').append(node('p', 'muted', 'Nothing here yet. Try another filter.'));
@@ -97,6 +118,12 @@ function openEditor(item = null, importedUrl = '') {
   $('#product-title').value = item?.title || '';
   $('#product-title').required = Boolean(editing);
   $('#product-note').value = item?.note || '';
+  $('#category-editor').hidden = !editing;
+  if (editing) {
+    $('#product-category').replaceChildren(...Object.keys(config.categories || {}).map(name => node('option', '', name)));
+    $('#product-category').value = item.category || 'Other';
+    fillSubcategories(item.subcategory);
+  }
   $('#product-target').value = item?.target_price ?? '';
   $('#product-discount').value = item?.discount_percent ?? '';
   $('#currency-hint').textContent = item?.currency ? `(${item.currency}, absolute price)` : '(absolute price, optional)';
@@ -105,6 +132,11 @@ function openEditor(item = null, importedUrl = '') {
   if (!importedUrl) $('#product-url').focus();
 }
 function closeEditor() { editor.close(); editing = null; }
+function fillSubcategories(selected = 'Other') {
+  const options = config.categories?.[$('#product-category').value] || ['Other'];
+  $('#product-subcategory').replaceChildren(...options.map(name => node('option', '', name)));
+  $('#product-subcategory').value = options.includes(selected) ? selected : options[0];
+}
 
 async function share(item) {
   const data = { title: item.title, text: `Thought you might like this: ${item.title}`, url: item.url };
@@ -131,21 +163,28 @@ $('#open-add').addEventListener('click', () => openEditor());
 $('#empty-add').addEventListener('click', () => openEditor());
 $('#close-dialog').addEventListener('click', closeEditor);
 $('#refresh').addEventListener('click', load);
-document.querySelectorAll('.filter').forEach(button => button.addEventListener('click', () => {
+$('#collection-search').addEventListener('input', render);
+$('#product-category').addEventListener('change', () => fillSubcategories());
+document.querySelectorAll('.status-filters .filter').forEach(button => button.addEventListener('click', () => {
   filter = button.dataset.filter;
-  document.querySelectorAll('.filter').forEach(b => b.classList.toggle('active', b === button)); render();
+  document.querySelectorAll('.status-filters .filter').forEach(b => b.classList.toggle('active', b === button)); render();
 }));
 $('#editor-form').addEventListener('submit', async event => {
   event.preventDefault();
   const button = $('#save-button'); button.disabled = true; button.textContent = 'Saving…';
   $('#form-error').textContent = '';
   const payload = { url: $('#product-url').value, title: $('#product-title').value, note: $('#product-note').value, target_price: $('#product-target').value, discount_percent: $('#product-discount').value };
+  if (editing) {
+    const original = items.find(item => item.id === editing);
+    if (original && (original.category !== $('#product-category').value || original.subcategory !== $('#product-subcategory').value))
+      Object.assign(payload, { category: $('#product-category').value, subcategory: $('#product-subcategory').value });
+  }
   try {
     const result = editing
       ? await request(`/api/items/${editing}`, { method: 'PATCH', body: JSON.stringify(payload) })
       : await request('/api/items', { method: 'POST', body: JSON.stringify(payload) });
     closeEditor(); await load(); toast(result.warning || (result.existing ? 'Already in your edit.' : 'Saved to your edit.'));
-    if (!config.alerts && (payload.target_price || payload.discount_percent)) toast('Saved the alert. Configure email and daily checks to receive it.');
+    if (!config.alerts && (payload.target_price || payload.discount_percent)) toast('Saved the watch. Configure SMS and daily checks to receive texts.');
   } catch (error) { $('#form-error').textContent = error.message; }
   finally { button.disabled = false; button.textContent = editing ? 'Save changes ↗' : 'Save this find ↗'; }
 });

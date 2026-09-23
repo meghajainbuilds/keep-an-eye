@@ -7,6 +7,7 @@ import { createStore } from './lib/store.mjs';
 import { cleanUrl, inspectProduct } from './lib/product.mjs';
 import { checkPrices } from './lib/alerts.mjs';
 import { askShoppingAssistant } from './lib/assistant.mjs';
+import { CATEGORIES, categorizeProduct, validCategory } from './lib/categories.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const password = process.env.APP_PASSWORD;
@@ -74,8 +75,9 @@ export const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'POST' && path === '/api/check-prices') {
       if (!cronSecret || !equal(req.headers.authorization || '', `Bearer ${cronSecret}`)) return json(res, 401, { error: 'Unauthorized.' });
-      const result = await checkPrices(store, { email: {
-        to: process.env.ALERT_EMAIL, from: process.env.RESEND_FROM, key: process.env.RESEND_API_KEY
+      const result = await checkPrices(store, { sms: {
+        to: process.env.ALERT_PHONE, from: process.env.TWILIO_FROM,
+        accountSid: process.env.TWILIO_ACCOUNT_SID, authToken: process.env.TWILIO_AUTH_TOKEN
       } });
       return json(res, 200, result);
     }
@@ -104,7 +106,8 @@ export const server = http.createServer(async (req, res) => {
       if (!validSession(req)) return json(res, 401, { error: 'Sign in to see your saved items.' });
       if (!sameOrigin(req)) return json(res, 403, { error: 'Invalid origin.' });
       if (req.method === 'GET' && path === '/api/config') return json(res, 200, {
-        assistant: Boolean(process.env.OPENAI_API_KEY), alerts: Boolean(process.env.ALERT_EMAIL && process.env.RESEND_API_KEY && process.env.RESEND_FROM)
+        assistant: Boolean(process.env.OPENAI_API_KEY), categories: CATEGORIES,
+        alerts: Boolean(process.env.ALERT_PHONE && process.env.TWILIO_FROM && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN)
       });
       if (req.method === 'GET' && path === '/api/items') return json(res, 200, { items: store.list() });
       if (req.method === 'POST' && path === '/api/items') {
@@ -116,8 +119,11 @@ export const server = http.createServer(async (req, res) => {
         try { details = await inspectProduct(url); }
         catch { warning = 'Saved the link. The store did not provide product details, so add a title and check prices manually.'; }
         const title = safeText(input.title, 180) || details.title || new URL(url).hostname;
+        const note = safeText(input.note, 500);
+        const classification = await categorizeProduct({ url, title, description: details.description, note },
+          process.env.OPENAI_API_KEY, process.env.OPENAI_MODEL);
         const item = store.add({ url, title, note: safeText(input.note, 500), ...details, title,
-          target_price: target(input.target_price), discount_percent: discount(input.discount_percent) });
+          ...classification, target_price: target(input.target_price), discount_percent: discount(input.discount_percent) });
         return json(res, 201, { item, warning });
       }
       const match = /^\/api\/items\/([\w-]+)$/.exec(path);
@@ -128,6 +134,12 @@ export const server = http.createServer(async (req, res) => {
         if (Object.hasOwn(input, 'note')) changes.note = safeText(input.note, 500);
         if (Object.hasOwn(input, 'target_price')) { changes.target_price = target(input.target_price); changes.last_notified_at = null; }
         if (Object.hasOwn(input, 'discount_percent')) { changes.discount_percent = discount(input.discount_percent); changes.last_notified_at = null; }
+        if (Object.hasOwn(input, 'category') || Object.hasOwn(input, 'subcategory')) {
+          const category = input.category ?? item.category;
+          const subcategory = input.subcategory ?? item.subcategory;
+          if (!validCategory(category, subcategory)) throw new Error('Choose a valid category and subcategory.');
+          Object.assign(changes, { category, subcategory, category_source: 'manual' });
+        }
         return json(res, 200, { item: store.update(item.id, changes) });
       }
       if (match && req.method === 'DELETE') return json(res, store.remove(match[1]) ? 200 : 404, { ok: true });
@@ -146,7 +158,7 @@ export const server = http.createServer(async (req, res) => {
     }
     json(res, 404, { error: 'Not found.' });
   } catch (error) {
-    const clientError = /^(Enter |Paste |Use |Invalid |Request too large|Title cannot|Ask a question|Set OPENAI_API_KEY)/.test(error.message);
+    const clientError = /^(Enter |Paste |Use |Invalid |Request too large|Title cannot|Choose a valid|Ask a question|Set OPENAI_API_KEY)/.test(error.message);
     if (!clientError) console.error(error);
     json(res, clientError ? 400 : 502, { error: clientError ? error.message : 'That request could not be completed.' });
   }

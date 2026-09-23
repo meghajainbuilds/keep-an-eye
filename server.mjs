@@ -8,11 +8,16 @@ import { cleanUrl, inspectProduct } from './lib/product.mjs';
 import { checkPrices } from './lib/alerts.mjs';
 import { askShoppingAssistant } from './lib/assistant.mjs';
 import { CATEGORIES, categorizeProduct, validCategory } from './lib/categories.mjs';
+import { sendPushAlert, validSubscription } from './lib/push.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const password = process.env.APP_PASSWORD;
 const secret = process.env.SESSION_SECRET;
 const cronSecret = process.env.CRON_SECRET;
+const pushPublicKey = process.env.VAPID_PUBLIC_KEY;
+const pushPrivateKey = process.env.VAPID_PRIVATE_KEY;
+const pushSubject = process.env.VAPID_SUBJECT;
+const pushReady = Boolean(pushPublicKey && pushPrivateKey && pushSubject);
 if (!password || !secret || secret.length < 32 || !cronSecret || cronSecret.length < 32) {
   console.error('Set APP_PASSWORD, SESSION_SECRET and CRON_SECRET in .env (secrets at least 32 characters).');
   process.exit(1);
@@ -67,6 +72,7 @@ const staticFiles = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
   ['/manifest.webmanifest', ['manifest.webmanifest', 'application/manifest+json']],
+  ['/sw.js', ['sw.js', 'text/javascript; charset=utf-8']],
   ['/icon.svg', ['icon.svg', 'image/svg+xml']]
 ]);
 
@@ -75,10 +81,8 @@ export const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'POST' && path === '/api/check-prices') {
       if (!cronSecret || !equal(req.headers.authorization || '', `Bearer ${cronSecret}`)) return json(res, 401, { error: 'Unauthorized.' });
-      const result = await checkPrices(store, { sms: {
-        to: process.env.ALERT_PHONE, from: process.env.TWILIO_FROM,
-        accountSid: process.env.TWILIO_ACCOUNT_SID, authToken: process.env.TWILIO_AUTH_TOKEN
-      } });
+      const result = await checkPrices(store, { notify: pushReady ? ({ item, price }) =>
+        sendPushAlert(store, { item, price, publicKey: pushPublicKey, privateKey: pushPrivateKey, subject: pushSubject }) : null });
       return json(res, 200, result);
     }
     if (req.method === 'POST' && path === '/api/login') {
@@ -107,8 +111,21 @@ export const server = http.createServer(async (req, res) => {
       if (!sameOrigin(req)) return json(res, 403, { error: 'Invalid origin.' });
       if (req.method === 'GET' && path === '/api/config') return json(res, 200, {
         assistant: Boolean(process.env.OPENAI_API_KEY), categories: CATEGORIES,
-        alerts: Boolean(process.env.ALERT_PHONE && process.env.TWILIO_FROM && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN)
+        alerts: pushReady, pushPublicKey: pushReady ? pushPublicKey : null
       });
+      if (req.method === 'POST' && path === '/api/push-subscriptions') {
+        if (!pushReady) return json(res, 409, { error: 'Phone notifications are not configured.' });
+        const subscription = await body(req);
+        if (!validSubscription(subscription)) return json(res, 400, { error: 'Invalid phone subscription.' });
+        store.saveSubscription(subscription);
+        return json(res, 200, { ok: true });
+      }
+      if (req.method === 'DELETE' && path === '/api/push-subscriptions') {
+        const input = await body(req);
+        if (typeof input.endpoint !== 'string') return json(res, 400, { error: 'Invalid phone subscription.' });
+        store.removeSubscription(input.endpoint);
+        return json(res, 200, { ok: true });
+      }
       if (req.method === 'GET' && path === '/api/items') return json(res, 200, { items: store.list() });
       if (req.method === 'POST' && path === '/api/items') {
         const input = await body(req);
@@ -121,7 +138,7 @@ export const server = http.createServer(async (req, res) => {
         const title = safeText(input.title, 180) || details.title || new URL(url).hostname;
         const note = safeText(input.note, 500);
         const classification = await categorizeProduct({ url, title, description: details.description, note },
-          process.env.OPENAI_API_KEY, process.env.OPENAI_MODEL);
+          process.env.OPENAI_API_KEY, process.env.OPENAI_CATEGORIZATION_MODEL);
         const item = store.add({ url, title, note: safeText(input.note, 500), ...details, title,
           ...classification, target_price: target(input.target_price), discount_percent: discount(input.discount_percent) });
         return json(res, 201, { item, warning });
@@ -153,7 +170,7 @@ export const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && staticFiles.has(path)) {
       const [file, type] = staticFiles.get(path);
       const bytes = await readFile(join(root, 'public', file));
-      res.writeHead(200, { 'content-type': type, 'cache-control': file === 'index.html' ? 'no-store' : 'public, max-age=3600', 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'content-security-policy': "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'" });
+      res.writeHead(200, { 'content-type': type, 'cache-control': ['index.html', 'sw.js'].includes(file) ? 'no-store' : 'public, max-age=3600', 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'content-security-policy': "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; worker-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'" });
       res.end(bytes); return;
     }
     json(res, 404, { error: 'Not found.' });

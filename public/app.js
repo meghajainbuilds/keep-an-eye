@@ -40,6 +40,7 @@ function action(label, callback, className = '') {
 
 function card(item) {
   const article = node('article', 'card');
+  article.dataset.itemId = item.id;
   const visual = node('div', 'visual');
   if (item.image) {
     const img = node('img'); img.src = item.image; img.alt = ''; img.loading = 'lazy';
@@ -100,11 +101,78 @@ async function load() {
   try {
     const [list, settings] = await Promise.all([request('/api/items'), request('/api/config')]);
     items = list.items; config = settings; render(); showApp();
+    updatePushUI();
     if (!config.assistant) { $('#ask-form').hidden = true; $('#ai-note').textContent = 'Set OPENAI_API_KEY on your server to turn on the shopping assistant.'; }
     else { $('#ask-form').hidden = false; $('#ai-note').textContent = 'A quiet second opinion, grounded in your saved finds.'; }
     const shared = new URL(location.href).searchParams.get('url');
     if (shared && !editor.open) { openEditor(null, shared); history.replaceState(null, '', '/'); }
+    const highlighted = new URL(location.href).searchParams.get('item');
+    if (highlighted && items.some(item => item.id === highlighted)) {
+      category = 'All'; subcategory = 'All'; filter = 'all'; $('#collection-search').value = '';
+      document.querySelectorAll('.status-filters .filter').forEach(button => button.classList.toggle('active', button.dataset.filter === 'all'));
+      render();
+      requestAnimationFrame(() => document.querySelectorAll('[data-item-id]').forEach(card => {
+        if (card.dataset.itemId === highlighted) { card.scrollIntoView({ block: 'center' }); card.classList.add('highlighted'); }
+      }));
+      history.replaceState(null, '', '/');
+    }
   } catch (error) { if (error.message !== 'Sign in to see your saved items.') toast(error.message); }
+}
+
+async function updatePushUI() {
+  const status = $('#push-status');
+  $('#enable-push').hidden = true; $('#disable-push').hidden = true;
+  if (!config.alerts) { status.textContent = 'Phone alerts need push keys on the server before you can turn them on.'; return; }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    status.textContent = 'On iPhone, add this site to your Home Screen from Safari, then open it there to enable alerts.';
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    status.textContent = 'Notifications are blocked. Allow them in your phone settings to receive price alerts.'; return;
+  }
+  try {
+    const registration = await navigator.serviceWorker.getRegistration('/');
+    const subscription = await registration?.pushManager.getSubscription();
+    status.textContent = subscription ? 'Price alerts are on for this phone.' : 'Turn on notifications so price drops appear on your phone.';
+    $('#enable-push').hidden = Boolean(subscription);
+    $('#disable-push').hidden = !subscription;
+  } catch { status.textContent = 'Could not check notifications on this phone. Try refreshing.'; }
+}
+
+function publicKeyBytes(value) {
+  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='));
+  return Uint8Array.from(binary, character => character.charCodeAt(0));
+}
+
+async function enablePush() {
+  const button = $('#enable-push'); button.disabled = true;
+  try {
+    // Permission must be requested directly from this tap, especially on iPhone.
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') { await updatePushUI(); return; }
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    const ready = await navigator.serviceWorker.ready;
+    const subscription = await ready.pushManager.getSubscription() ||
+      await ready.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKeyBytes(config.pushPublicKey) });
+    await request('/api/push-subscriptions', { method: 'POST', body: JSON.stringify(subscription.toJSON()) });
+    await updatePushUI(); toast('Phone alerts enabled. You can now watch a price.');
+  } catch (error) { toast(error.message || 'Could not enable phone alerts.'); }
+  finally { button.disabled = false; }
+}
+
+async function disablePush() {
+  const button = $('#disable-push'); button.disabled = true;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration('/');
+    const subscription = await registration?.pushManager.getSubscription();
+    if (subscription) {
+      await request('/api/push-subscriptions', { method: 'DELETE', body: JSON.stringify({ endpoint: subscription.endpoint }) });
+      await subscription.unsubscribe();
+    }
+    await updatePushUI(); toast('Alerts turned off on this phone.');
+  } catch (error) { toast(error.message || 'Could not turn off alerts.'); }
+  finally { button.disabled = false; }
 }
 
 function openEditor(item = null, importedUrl = '') {
@@ -163,6 +231,8 @@ $('#open-add').addEventListener('click', () => openEditor());
 $('#empty-add').addEventListener('click', () => openEditor());
 $('#close-dialog').addEventListener('click', closeEditor);
 $('#refresh').addEventListener('click', load);
+$('#enable-push').addEventListener('click', enablePush);
+$('#disable-push').addEventListener('click', disablePush);
 $('#collection-search').addEventListener('input', render);
 $('#product-category').addEventListener('change', () => fillSubcategories());
 document.querySelectorAll('.status-filters .filter').forEach(button => button.addEventListener('click', () => {
@@ -184,7 +254,7 @@ $('#editor-form').addEventListener('submit', async event => {
       ? await request(`/api/items/${editing}`, { method: 'PATCH', body: JSON.stringify(payload) })
       : await request('/api/items', { method: 'POST', body: JSON.stringify(payload) });
     closeEditor(); await load(); toast(result.warning || (result.existing ? 'Already in your edit.' : 'Saved to your edit.'));
-    if (!config.alerts && (payload.target_price || payload.discount_percent)) toast('Saved the watch. Configure SMS and daily checks to receive texts.');
+    if (!config.alerts && (payload.target_price || payload.discount_percent)) toast('Saved the watch. Configure phone alerts and daily checks to receive notifications.');
   } catch (error) { $('#form-error').textContent = error.message; }
   finally { button.disabled = false; button.textContent = editing ? 'Save changes ↗' : 'Save this find ↗'; }
 });

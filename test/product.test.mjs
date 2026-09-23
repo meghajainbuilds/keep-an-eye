@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cleanUrl, fetchProductHtml, parseProduct } from '../lib/product.mjs';
 import { createStore } from '../lib/store.mjs';
-import { checkPrices, sendSms } from '../lib/alerts.mjs';
+import { checkPrices } from '../lib/alerts.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,7 +34,7 @@ test('alerts once on a threshold, rearms only after price rises, and does not se
     const item = store.add({ url: 'https://store.example/item', title: 'Dress', currency: 'USD', price: 120, target_price: 90 });
     let observed = 89; let sent = 0;
     const options = { inspect: async () => ({ price: observed, currency: 'USD', price_source: 'JSON-LD offer' }),
-      send: async () => { sent++; }, sms: { to: '+12065550111', from: '+12065550122', accountSid: `AC${'a'.repeat(32)}`, authToken: 'test' } };
+      notify: async () => { sent++; } };
     await checkPrices(store, options);
     await checkPrices(store, options);
     assert.equal(sent, 1);
@@ -57,7 +57,7 @@ test('discount alert establishes a baseline and fires after a 20 percent drop', 
     const item = store.add({ url: 'https://store.example/coat', title: 'Coat', discount_percent: 20 });
     let observed = 100; let sent = 0;
     const options = { inspect: async () => ({ price: observed, currency: 'USD', price_source: 'JSON-LD offer' }),
-      send: async () => { sent++; }, sms: { to: '+12065550111', from: '+12065550122', accountSid: `AC${'a'.repeat(32)}`, authToken: 'test' } };
+      notify: async () => { sent++; } };
     await checkPrices(store, options);
     assert.equal(store.get(item.id).baseline_price, 100);
     observed = 85;
@@ -67,15 +67,4 @@ test('discount alert establishes a baseline and fires after a 20 percent drop', 
     await checkPrices(store, options);
     assert.equal(sent, 1);
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('submits a price alert as an SMS without claiming it was delivered', async () => {
-  let destination; let options;
-  await sendSms({ to: '+12065550111', from: '+12065550122', accountSid: `AC${'a'.repeat(32)}`,
-    authToken: 'secret', item: { title: 'Leather boots', currency: 'USD', url: 'https://shop.example/boots' }, price: 80,
-    request: async (url, init) => { destination = url; options = init; return { ok: true, json: async () => ({ sid: `SM${'b'.repeat(32)}`, status: 'queued' }) }; } });
-  assert.match(destination, /api\.twilio\.com\/2010-04-01\/Accounts\/AC/);
-  assert.equal(new URLSearchParams(options.body).get('To'), '+12065550111');
-  assert.match(new URLSearchParams(options.body).get('Body'), /Leather boots is \$80\.00/);
-  assert.match(options.headers.authorization, /^Basic /);
 });

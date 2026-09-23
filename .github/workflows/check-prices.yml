@@ -12,7 +12,10 @@ jobs:
           APP_URL: ${{ secrets.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          test -n "$APP_URL" && test -n "$CRON_SECRET"
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "Daily price check is not configured yet. Set APP_URL and CRON_SECRET repository secrets after deployment."
+            exit 0
+          fi
           curl --fail --show-error --silent --max-time 240 \
             --request POST \
             --header "Authorization: Bearer $CRON_SECRET" \

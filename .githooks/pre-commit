@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+node scripts/check-private.mjs --staged
+command -v gitleaks >/dev/null || { echo 'Install Gitleaks before committing.'; exit 1; }
+git diff --cached --binary | gitleaks stdin --redact

@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+node scripts/check-private.mjs
+command -v gitleaks >/dev/null || { echo 'Install Gitleaks before pushing.'; exit 1; }
+gitleaks git --redact .

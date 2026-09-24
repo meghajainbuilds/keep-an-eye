@@ -1,0 +1,24 @@
+name: Daily price check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check saved products
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "Daily price check is not configured yet. Set APP_URL and CRON_SECRET repository secrets after deployment."
+            exit 0
+          fi
+          status=$(curl --silent --max-time 240 --output /dev/null --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "${APP_URL%/}/api/check-prices") || { echo "Price check request failed."; exit 1; }
+          [ "$status" = "200" ] || { echo "Price check failed."; exit 1; }
+          echo "Price check completed."

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f6f4ee">
+  <meta name="description" content="A quieter place to keep the things that caught your eye.">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css?v=collection-watch-3">
+  <title>Keep an Eye · A considered shopping list</title>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Keep an Eye home"><span class="brandmark">◉</span><span>keep an eye<span class="period">.</span></span></a>
+      <div class="topbar-actions"><button class="text-button" id="open-settings" hidden>Settings</button><button class="text-button" id="logout" hidden>Sign out</button></div>
+    </header>
+
+    <main id="app" hidden>
+      <section class="collection" aria-label="Your saved products">
+        <div class="section-top"><div><span class="eyebrow">KEEP AN EYE</span><h2>Your collection <span id="count"></span></h2></div><div class="collection-actions"><button class="secondary" id="open-add" type="button">Add a link</button><button class="subtle" id="refresh">Refresh ↻</button></div></div>
+        <p class="collection-intro">Saved automatically. Watched daily. We’ll alert you at a 20% price drop.</p>
+        <div id="saving-onboarding" class="onboarding" hidden><div><strong>Save while you shop</strong><p>Add Keep an Eye to your iPhone Share Sheet once, then save from a product page.</p></div><div><button class="secondary" id="onboarding-setup">Set up saving</button><button class="subtle" id="complete-setup">I’ve set this up</button></div></div>
+        <p class="notification-nudge" id="notification-nudge" hidden>For phone alerts, <button class="text-button" id="notification-settings">enable notifications in Settings</button>. Watching runs automatically.</p>
+        <label class="sr-only" for="collection-search">Search your saved finds</label><input class="collection-search" id="collection-search" type="search" placeholder="Search products, stores, or notes…">
+        <div class="filters" id="category-filters" aria-label="Browse categories"></div>
+        <div class="filters subfilters" id="subcategory-filters" aria-label="Browse subcategories" hidden></div>
+        <div class="filters status-filters" aria-label="Filter price watches"><button class="filter active" data-filter="all">All saved</button><button class="filter" data-filter="drops">Price drops</button><button class="filter" data-filter="unpriced">Waiting for price</button></div>
+        <div id="items" class="grid"></div>
+        <div id="empty" class="empty" hidden><div class="empty-mark">✳</div><h3>Your first find belongs here.</h3><p>Share a product to Keep an Eye or add a link. We’ll watch for a 20% price drop automatically.</p><button class="secondary" id="empty-add">Set up saving from websites <span>↗</span></button></div>
+      </section>
+
+      <section class="assistant-section" id="assistant-section" hidden>
+        <div><span class="eyebrow">COMPARE SAVED PRODUCTS</span><h2>Help me choose.</h2><p>Compare what you’ve saved, find a theme, or decide what deserves your attention.</p></div>
+        <form id="ask-form" class="ask-form"><label for="question" class="sr-only">Your question</label><input id="question" maxlength="500" placeholder="Which saved pieces work together?" required><button type="submit" aria-label="Ask assistant">↗</button></form>
+        <div class="answer" id="answer" hidden></div>
+        <p class="fine" id="ai-note">A quiet second opinion, grounded in your saved finds.</p>
+      </section>
+    </main>
+
+    <section id="login-view" class="login-view" hidden><span class="eyebrow">YOUR PRIVATE EDIT</span><h1>A little space for<br><em>your good finds.</em></h1><p>Sign in to see your saved products.</p><form id="login-form"><label for="password">Password</label><div class="login-row"><input id="password" type="password" autocomplete="current-password" required><button class="primary" type="submit">Enter ↗</button></div></form><div id="login-error" class="error" role="alert"></div></section>
+    <footer><span>GOOD TASTE TAKES TIME.</span><span>A little project for shopping with intention.</span></footer>
+  </div>
+
+  <dialog id="editor"><form method="dialog" id="editor-form"><div class="dialog-head"><span class="eyebrow" id="dialog-label">A NEW FIND</span><button type="button" id="close-dialog" class="close" aria-label="Close">×</button></div><h2 id="dialog-title">Keep it in mind.</h2><p class="dialog-copy">Save a link now. We’ll sort it into your collection automatically, and you can correct the category later.</p><label for="product-url">Product link</label><input id="product-url" type="url" placeholder="https://store.com/product" required><label for="product-title">Name <span>(optional)</span></label><input id="product-title" maxlength="180" placeholder="We’ll try to find it for you"><label for="product-note">Your note <span>(optional)</span></label><textarea id="product-note" maxlength="500" rows="2" placeholder="Why did it catch your eye?"></textarea><div id="category-editor" hidden><label for="product-category">Category</label><select id="product-category"></select><label for="product-subcategory">Subcategory</label><select id="product-subcategory"></select><p class="fine">Correct the automatic category when it misses something.</p></div><label class="watch-toggle"><input id="product-watch" type="checkbox" checked> Watch for a 20% price drop</label><p class="fine">Checked daily against the first readable price. Turn this off to stop watching without removing the product.</p><div id="form-error" class="error" role="alert"></div><button class="primary wide" type="submit" id="save-button">Save this find ↗</button></form></dialog>
+  <dialog id="settings" aria-labelledby="settings-heading"><div class="shortcut-content"><div class="dialog-head"><h2 id="settings-heading">Settings</h2><button class="close" id="close-settings" aria-label="Close settings">×</button></div><section class="saving-settings"><h3>Saving from websites</h3><p>Your iPhone Shortcut lets you save while shopping. Manage its connection or view setup instructions here.</p><button class="secondary" id="open-shortcut">Manage iPhone saving</button></section>      <section class="alert-settings" aria-label="Phone price alerts">
+        <div><span class="eyebrow">PRICE ALERTS</span><h2>Hear when the price drops.</h2><p id="push-status" role="status">Checking phone notification settings…</p></div>
+        <div class="alert-controls"><button class="secondary" id="enable-push" type="button" hidden>Enable phone alerts</button><button class="subtle" id="disable-push" type="button" hidden>Turn off alerts on this phone</button></div>
+      </section><p class="fine">Every new save is watched for a 20% drop from its first verified price. Use Stop watching on any product to opt out. Checks run daily, so alerts are not instant.</p></div></dialog>
+  <dialog id="shortcut-setup" aria-labelledby="shortcut-heading">
+    <div class="shortcut-content">
+      <div class="dialog-head"><span class="eyebrow">SAVE FROM ANY WEBSITE</span><button class="close" id="close-shortcut" type="button" aria-label="Close setup">×</button></div>
+      <h2 id="shortcut-heading">Stay in your shopping flow.</h2>
+      <p>Product page → Share → <strong>Save to Keep an Eye</strong>. Your link goes straight into your collection. No form, no app switch.</p>
+      <p class="dialog-copy">Set this up once on your iPhone using Apple’s Shortcuts app. Keep this guide open while you build it. Your phone may ask permission to connect the first time.</p>
+      <ol class="shortcut-steps">
+        <li><strong>Create the Shortcut.</strong> Open Shortcuts, tap +, and name it <strong>Save to Keep an Eye</strong>. In Details, enable <strong>Show in Share Sheet</strong>. Accept <strong>URLs</strong> and <strong>Safari web pages</strong>.</li>
+        <li><strong>Get the product link.</strong> Add <strong>Get URLs from Input</strong>, using <strong>Shortcut Input</strong>. Keep only URLs beginning with <strong>https://</strong> or <strong>http://</strong>, then use <strong>Get Item from List → First Item</strong> on that filtered list. Google shares may include a <strong>source:</strong> entry; skip it. Stop with a message if no website URL remains.</li>
+        <li><strong>Connect your collection.</strong> Create a private saving key below. It can add links, but cannot read or delete your finds.
+          <p id="shortcut-key-status" role="status"></p>
+          <button class="secondary" id="create-shortcut-key" type="button">Create saving key</button>
+          <button class="subtle" id="revoke-shortcut-key" type="button" hidden>Disable existing Shortcut</button>
+          <div id="shortcut-key-panel" hidden><label for="shortcut-key">Private saving key</label><input id="shortcut-key" type="password" readonly autocomplete="off"><button class="subtle" id="copy-shortcut-key" type="button">Copy authorization header</button><p class="fine">Shown only during setup. Keep your Shortcut private. Creating a new key disables the previous one.</p></div>
+        </li>
+        <li><strong>Send the link.</strong> Add <strong>Get Contents of URL</strong> and enter this address:
+          <code id="shortcut-endpoint"></code><button class="subtle" id="copy-shortcut-endpoint" type="button">Copy address</button>
+          <details><summary>Show the connection settings</summary><p>Method: <strong>POST</strong></p><p>Headers: add <strong>Authorization</strong>, then paste the copied authorization header as its value.</p><p>Request Body: <strong>JSON</strong>. Add a <strong>Text</strong> field named <strong>url</strong>. For its value, choose the <strong>Item from List</strong> variable from step 2, not typed text.</p></details>
+        </li>
+        <li><strong>Show the result.</strong> Add <strong>Get Dictionary Value</strong> for key <strong>message</strong> in <strong>Contents of URL</strong>. Add <strong>Show Result</strong> using that Dictionary Value. Tap Done.</li>
+      </ol>
+      <div class="shortcut-try"><strong>Try it on a product you like.</strong><p>Open a product page in Safari or Chrome → Share → Save to Keep an Eye. Wait for “Saved to Keep an Eye.” If it is already saved, we’ll tell you. Blocked stores still save as links.</p></div>
+      <p class="fine">This sets up saving only. Every saved product is automatically watched for a 20% price drop. Enable phone notifications in Settings to receive alerts.</p>
+      <p id="shortcut-error" class="error" role="alert"></p>
+    </div>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js?v=collection-watch-3"></script>
+</body>
+</html>

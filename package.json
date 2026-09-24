@@ -9,7 +9,9 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env server.mjs",
     "dev": "node --watch --env-file-if-exists=.env server.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "privacy:setup": "node scripts/setup-privacy.mjs",
+    "privacy:check": "node scripts/check-private.mjs"
   },
   "license": "MIT",
   "dependencies": {

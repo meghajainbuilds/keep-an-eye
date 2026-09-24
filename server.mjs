@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import { createHmac, timingSafeEqual, randomBytes, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createStore } from './lib/store.mjs';
-import { cleanUrl, inspectProduct } from './lib/product.mjs';
+import { cleanUrl } from './lib/product.mjs';
 import { checkPrices } from './lib/alerts.mjs';
+import { createEnrichmentQueue } from './lib/enrichment.mjs';
 import { askShoppingAssistant } from './lib/assistant.mjs';
 import { CATEGORIES, categorizeProduct, guessCategory, validCategory } from './lib/categories.mjs';
 import { sendPushAlert, validSubscription } from './lib/push.mjs';
@@ -79,24 +80,23 @@ const staticFiles = new Map([
   ['/icon.svg', ['icon.svg', 'image/svg+xml']]
 ]);
 
+const enrichment = createEnrichmentQueue(store, {
+  classify: item => categorizeProduct(item, process.env.OPENAI_API_KEY, process.env.OPENAI_CATEGORIZATION_MODEL),
+  notify: pushReady ? ({ item, price }) => sendPushAlert(store, {
+    item, price, publicKey: pushPublicKey, privateKey: pushPrivateKey, subject: pushSubject
+  }) : null
+});
 async function saveFind(input) {
   const url = cleanUrl(input.url);
   const existing = store.byUrl(url);
   if (existing) return { item: existing, existing: true };
-  let details = {}, warning = null;
-  try { details = await inspectProduct(url); }
-  catch { warning = 'Saved the link. The store did not provide product details, so add a title and check prices manually.'; }
-  const title = safeText(input.title, 180) || details.title || new URL(url).hostname;
+  const title = safeText(input.title, 180) || new URL(url).hostname;
   const note = safeText(input.note, 500);
-  const classification = await categorizeProduct({ url, title, description: details.description, note },
-    process.env.OPENAI_API_KEY, process.env.OPENAI_CATEGORIZATION_MODEL);
-  // Another request may have saved this URL while enrichment was running.
-  const raced = store.byUrl(url);
-  if (raced) return { item: raced, existing: true };
-  const item = store.add({ url, ...details, title, note, ...classification,
+  const item = store.add({ url, title, note, ...guessCategory({ url, title, note }), extraction_status: 'pending',
     watch_enabled: input.watch_enabled !== false,
     target_price: target(input.target_price), discount_percent: discount(input.discount_percent) ?? 20 });
-  return { item, warning };
+  enrichment.enqueue(item.id);
+  return { item, warning: null };
 }
 
 export const server = http.createServer(async (req, res) => {
@@ -204,24 +204,21 @@ export const server = http.createServer(async (req, res) => {
       if (previewMatch && req.method === 'POST') {
         const before = store.get(previewMatch[1]);
         if (!before) return json(res, 404, { error: 'Item not found.' });
-        let details;
-        try { details = await inspectProduct(before.url); }
-        catch { return json(res, 200, { message: 'The store did not provide a preview. Your saved link is still here.' }); }
-        const item = store.get(before.id);
+        enrichment.enqueue(before.id);
+        return json(res, 202, { message: 'Finding product details. Your saved link is ready to open.' });
+      }
+      const variantMatch = /^\/api\/items\/([\w-]+)\/variant$/.exec(path);
+      if (variantMatch && req.method === 'POST') {
+        const item = store.get(variantMatch[1]);
         if (!item) return json(res, 404, { error: 'Item not found.' });
-        const changes = {};
-        if (details.image) changes.image = details.image;
-        if (details.description) changes.description = details.description;
-        if (item.title === new URL(item.url).hostname && details.title) changes.title = details.title;
-        if (item.category_source !== 'manual') Object.assign(changes, guessCategory({
-          url: item.url, title: changes.title || item.title, description: changes.description || item.description, note: item.note
-        }));
-        store.update(item.id, changes);
-        await checkPrices(store, { itemId: item.id, inspect: async () => details,
-          notify: pushReady ? ({ item, price }) => sendPushAlert(store, {
-            item, price, publicKey: pushPublicKey, privateKey: pushPrivateKey, subject: pushSubject
-          }) : null });
-        return json(res, 200, { message: details.price != null ? 'Product details and price updated.' : 'Preview refreshed. Still waiting for a readable price.' });
+        const input = await body(req);
+        const variant = JSON.parse(item.variants_json || '[]').find(v => v.id === input.variant_id);
+        if (!variant) return json(res, 400, { error: 'Choose a valid product variant.' });
+        store.update(item.id, { selected_url: variant.url ? cleanUrl(variant.url) : item.url, variant_id: variant.id, variant_label: variant.label,
+          price: null, baseline_price: null, currency: null, price_source: null, image: null,
+          observed_at: null, last_notified_at: null });
+        enrichment.enqueue(item.id);
+        return json(res, 202, { message: 'Finding the price for your selected variant.' });
       }
       const match = /^\/api\/items\/([\w-]+)$/.exec(path);
       if (match && req.method === 'PATCH') {
@@ -265,6 +262,8 @@ export const server = http.createServer(async (req, res) => {
     json(res, clientError ? 400 : 502, { error: clientError ? error.message : 'That request could not be completed.' });
   }
 });
+
+server.on('close', () => enrichment.stop());
 
 if (process.env.NODE_ENV !== 'test') {
   server.listen(Number(process.env.PORT) || 3000, () => console.log(`Keep an Eye running on http://localhost:${server.address().port}`));

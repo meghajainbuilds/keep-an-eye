@@ -16,3 +16,9 @@ This application is a single-user prototype for private self-hosting, not a mult
 Run `npm ci`, `npm test`, and `npm audit --audit-level=high`. Scan source and history with Gitleaks and run a JavaScript security static analysis such as Semgrep. Automated scanners are useful checks, not a guarantee of security.
 
 For security reports, use GitHub private vulnerability reporting when enabled. Do not post credentials or personal collections in public issues.
+
+## Before each commit and push
+
+Run `npm run privacy:setup` in your checkout to configure local hooks and a neutral commit name/noreply email. Install Gitleaks. Put any additional personal phrases to block in a local `.privacy-patterns` file (one literal phrase per line); that file is ignored and must never be committed. Review the staged diff for real shopping examples that automated checks cannot identify. Hooks check the exact staged snapshot before commit and scan history before push. API-based updates bypass Git hooks: run the equivalent source and secret scans before any API write. CI repeats source privacy, credential, dependency, and static-analysis checks, but cannot retract information already pushed.
+
+See renderer/README.md before enabling the optional browser service. Do not run it with app secrets or database access.

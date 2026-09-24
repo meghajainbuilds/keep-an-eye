@@ -13,3 +13,4 @@ data/
 .DS_Store
 coverage/
 security-results/
+.privacy-patterns

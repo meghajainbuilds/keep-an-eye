@@ -97,3 +97,11 @@ The collection opens first. All saved, Price drops, and Waiting for price are co
 ## Security and privacy
 
 See SECURITY.md. Never commit a real environment file, SQLite database, personal collection, or production deployment configuration. Test fixtures are fictional. Publishing this source does not publish data held by a separately hosted private instance.
+
+## Product details and variant watches
+
+Links save immediately. A durable background queue fills in product details and retries temporary failures with bounded backoff. Pending work resumes after restart. The collection refreshes while details are pending. Failed checks preserve the last verified price and its date, and cannot send a price alert.
+
+The shared parser understands ProductGroup/hasVariant, linked graph nodes, image objects, selected-variant URLs and common embedded commerce product JSON. Unknown or ambiguous prices remain unavailable. Choose a color/size when required. A choice starts a fresh baseline; checks never substitute another variant or currency. Existing unbound watches establish a fresh baseline when an exact variant is first identified, since an older price may describe another variant. Conditional coupons, membership discounts, shipping, and taxes are not inferred.
+
+The optional isolated browser service is described in renderer/README.md. It is disabled until provisioned and verified. Tests use fictional products and URLs only. Run `npm run privacy:setup` before contributing.

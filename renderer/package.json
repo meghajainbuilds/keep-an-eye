@@ -1,0 +1,1 @@
+{"name":"keep-an-eye-renderer","private":true,"type":"module","dependencies":{"playwright":"1.63.0"},"scripts":{"start":"node server.mjs"}}

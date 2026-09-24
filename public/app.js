@@ -8,6 +8,7 @@ let filter = 'all';
 let category = 'All';
 let subcategory = 'All';
 let config = {};
+let refreshTimer;
 
 async function request(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', ...options.headers } });
@@ -42,7 +43,7 @@ function card(item) {
   const article = node('article', 'card');
   article.dataset.itemId = item.id;
   const visual = node('a', 'visual');
-  visual.href = item.url; visual.target = '_blank'; visual.rel = 'noopener noreferrer';
+  visual.href = item.selected_url || item.url; visual.target = '_blank'; visual.rel = 'noopener noreferrer';
   visual.setAttribute('aria-label', 'Open ' + item.title);
   const missingPreview = () => {
     visual.classList.add('preview-missing');
@@ -59,7 +60,7 @@ function card(item) {
   body.append(node('div', 'category-tag', `${item.category || 'Other'} · ${item.subcategory || 'Other'}`));
   const heading = node('h3');
   const titleLink = node('a', 'product-link', item.title);
-  titleLink.href = item.url; titleLink.target = '_blank'; titleLink.rel = 'noopener noreferrer';
+  titleLink.href = item.selected_url || item.url; titleLink.target = '_blank'; titleLink.rel = 'noopener noreferrer';
   heading.append(titleLink); body.append(heading);
   const prices = node('div', 'prices');
   if (item.price != null && item.currency) {
@@ -72,15 +73,39 @@ function card(item) {
   } else prices.append(node('span', 'muted', 'Waiting for a price'));
   body.append(prices);
   const watching = item.watch_enabled !== 0;
-  body.append(node('p', 'watch-status', watching
-    ? (item.price == null ? 'Watching · Waiting for a readable price' : 'Watching · Alert at 20% off')
-    : 'Watching stopped'));
-  if (watching && item.baseline_price != null && item.currency) body.append(node('p', 'fine',
-    'Starting price ' + money(item.baseline_price, item.currency) + ' · Alert at ' + money(Math.floor(item.baseline_price * 80) / 100, item.currency) + ' or less'));
+  const status = item.extraction_status;
+  const label = status === 'pending' ? 'Finding product details…'
+    : status === 'needs_variant' ? 'Choose the color or size to watch'
+    : status === 'out_of_stock' ? 'Out of stock · Price alerts waiting'
+    : status !== 'verified' ? 'Price could not be verified · Will retry'
+    : item.discount_percent != null ? `Watching · Alert at ${item.discount_percent}% off` : 'Watching your target price';
+  body.append(node('p', 'watch-status', watching ? label : 'Watching stopped'));
+  if (item.variant_label) body.append(node('p', 'fine', 'Selected: ' + item.variant_label));
+  if (watching && item.baseline_price != null && item.currency) {
+    const targets = [];
+    if (item.discount_percent != null) targets.push(money(Math.floor(item.baseline_price * (100 - item.discount_percent) + 1e-8) / 100, item.currency));
+    if (item.target_price != null) targets.push(money(item.target_price, item.currency));
+    body.append(node('p', 'fine', 'Starting price ' + money(item.baseline_price, item.currency) + ' · Alert at ' + targets.join(' or ') + ' or less'));
+  }
+  const variants = JSON.parse(item.variants_json || '[]');
+  if (variants.length > 1 || status === 'needs_variant' && variants.length) {
+    const select = node('select'); select.setAttribute('aria-label', 'Choose a product variant');
+    const placeholder = node('option', '', 'Choose color / size'); placeholder.value = ''; select.append(placeholder);
+    for (const variant of variants) { const option = node('option', '', variant.label); option.value = variant.id; select.append(option); }
+    select.value = item.variant_id || '';
+    select.addEventListener('change', async () => {
+      if (!select.value) return;
+      select.disabled = true;
+      try { const result = await request('/api/items/' + item.id + '/variant', { method: 'POST', body: JSON.stringify({ variant_id: select.value }) });
+        await load(); toast(result.message);
+      } catch (error) { toast(error.message); select.disabled = false; }
+    });
+    body.append(select);
+  }
   if (item.note) body.append(node('p', 'note', `“${item.note}”`));
   if (item.observed_at) body.append(node('p', 'fine', `Price checked ${new Date(item.observed_at).toLocaleDateString()}. Confirm at the store.`));
   const actions = node('div', 'card-actions');
-  const visit = node('a', '', 'View ↗'); visit.href = item.url; visit.target = '_blank'; visit.rel = 'noopener noreferrer';
+  const visit = node('a', '', 'View ↗'); visit.href = item.selected_url || item.url; visit.target = '_blank'; visit.rel = 'noopener noreferrer';
   actions.append(visit, action('Share ↗', () => share(item)), action('Edit', () => openEditor(item)), action('Remove', () => remove(item), 'delete'));
   body.append(actions);
   const watchButton = action(watching ? 'Stop watching' : 'Resume watching', async () => {
@@ -135,9 +160,11 @@ function render() {
 }
 
 async function load() {
+  clearTimeout(refreshTimer);
   try {
     const [list, settings] = await Promise.all([request('/api/items'), request('/api/config')]);
     items = list.items; config = settings; render(); showApp();
+    if (items.some(item => item.extraction_status === 'pending')) refreshTimer = setTimeout(load, 3000);
     $('#saving-onboarding').hidden = config.savingSetupComplete;
     updatePushUI();
     $('#assistant-section').hidden = !config.assistant;

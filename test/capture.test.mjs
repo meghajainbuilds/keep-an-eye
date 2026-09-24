@@ -51,7 +51,12 @@ test('share-sheet credential is save-only, revocable, persistent, and never auth
     }
     assert.equal((await call('/api/capture?url=' + encodeURIComponent(item.url), 'GET', auth)).status, 401);
     assert.equal((await call('/api/capture', 'POST', { ...auth, origin: 'https://evil.example' }, { url: item.url })).status, 403);
-    const invalid = await call('/api/capture', 'POST', auth, { url: 'http://127.0.0.1/private' });
+    // A page that cannot be fetched is still a saved link, never a price observation.
+    const fallback = await call('/api/capture', 'POST', auth, { url: 'http://127.0.0.1/unreadable' });
+    assert.equal(fallback.status, 201);
+    assert.match((await fallback.json()).message, /Saved to Keep an Eye/);
+    assert.equal(fixture.byUrl('http://127.0.0.1/unreadable').price, null);
+    const invalid = await call('/api/capture', 'POST', auth, { url: 'javascript:alert(1)' });
     assert.equal(invalid.status, 400);
     const error = await invalid.json();
     assert.equal(error.message, error.error);

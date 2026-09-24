@@ -81,3 +81,9 @@ Scheduled GitHub workflows can run late. Alerts are approximate daily checks, no
 Shopping often starts long before checkout. A link you save is a signal of emerging intent; a target price is a condition under which you might act. The assistant uses your own saved context to help you decide, while the price checker relies on evidence from the merchant. The interesting next build is collections that remember *why* you saved something and help you choose across products.
 
 This is a personal, open source prototype. See `LICENSE` for reuse terms.
+
+## Product preview repair
+
+Images and titles open the saved original link. Refresh preview retries merchant metadata for a saved card while preserving its link, custom title, notes, manual category, and price-watch state. The optional comparison assistant is hidden when it is not configured.
+
+The Quince cardigan fixture contains observed Open Graph metadata from the Heather Pewter product page (September 24, 2026). It verifies the image and title, not a particular size or checkout price. Variant offers are not inferred from this preview fixture; price observation still requires an explicit offer with currency. Blocked pages remain saved links, with a compact missing-preview message. Fetches remain DNS-pinned and redirect-checked with a bounded 2 MB response limit.

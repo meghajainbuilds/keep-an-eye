@@ -41,17 +41,26 @@ function action(label, callback, className = '') {
 function card(item) {
   const article = node('article', 'card');
   article.dataset.itemId = item.id;
-  const visual = node('div', 'visual');
+  const visual = node('a', 'visual');
+  visual.href = item.url; visual.target = '_blank'; visual.rel = 'noopener noreferrer';
+  visual.setAttribute('aria-label', 'Open ' + item.title);
+  const missingPreview = () => {
+    visual.classList.add('preview-missing');
+    visual.replaceChildren(node('span', 'preview-label', 'Preview unavailable · Open product ↗'));
+  };
   if (item.image) {
     const img = node('img'); img.src = item.image; img.alt = ''; img.loading = 'lazy';
-    img.onerror = () => { visual.replaceChildren(node('span', 'placeholder', '◉')); };
+    img.onerror = missingPreview;
     visual.append(img);
-  } else visual.append(node('span', 'placeholder', '◉'));
+  } else missingPreview();
   article.append(visual);
   const body = node('div', 'card-body');
   body.append(node('div', 'merchant', new URL(item.url).hostname.replace(/^www\./, '')));
   body.append(node('div', 'category-tag', `${item.category || 'Other'} · ${item.subcategory || 'Other'}`));
-  body.append(node('h3', '', item.title));
+  const heading = node('h3');
+  const titleLink = node('a', 'product-link', item.title);
+  titleLink.href = item.url; titleLink.target = '_blank'; titleLink.rel = 'noopener noreferrer';
+  heading.append(titleLink); body.append(heading);
   const prices = node('div', 'prices');
   if (item.price != null && item.currency) {
     prices.append(node('span', 'price', money(item.price, item.currency)));
@@ -68,7 +77,15 @@ function card(item) {
   const actions = node('div', 'card-actions');
   const visit = node('a', '', 'View ↗'); visit.href = item.url; visit.target = '_blank'; visit.rel = 'noopener noreferrer';
   actions.append(visit, action('Share ↗', () => share(item)), action('Edit', () => openEditor(item)), action('Remove', () => remove(item), 'delete'));
-  body.append(actions); article.append(body); return article;
+  body.append(actions);
+  const retry = action('Refresh preview', async () => {
+    retry.disabled = true; retry.textContent = 'Loading preview…';
+    try { const result = await request('/api/items/' + item.id + '/preview', { method: 'POST', body: '{}' });
+      await load(); toast(result.message);
+    } catch (error) { toast(error.message); }
+    finally { retry.disabled = false; retry.textContent = 'Refresh preview'; }
+  }, 'subtle preview-retry');
+  body.append(retry); article.append(body); return article;
 }
 
 function render() {
@@ -102,8 +119,7 @@ async function load() {
     const [list, settings] = await Promise.all([request('/api/items'), request('/api/config')]);
     items = list.items; config = settings; render(); showApp();
     updatePushUI();
-    if (!config.assistant) { $('#ask-form').hidden = true; $('#ai-note').textContent = 'Set OPENAI_API_KEY on your server to turn on the shopping assistant.'; }
-    else { $('#ask-form').hidden = false; $('#ai-note').textContent = 'A quiet second opinion, grounded in your saved finds.'; }
+    $('#assistant-section').hidden = !config.assistant;
     const shared = new URL(location.href).searchParams.get('url');
     if (shared && !editor.open) { openEditor(null, shared); history.replaceState(null, '', '/'); }
     const highlighted = new URL(location.href).searchParams.get('item');

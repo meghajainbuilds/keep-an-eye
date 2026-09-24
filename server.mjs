@@ -7,7 +7,7 @@ import { createStore } from './lib/store.mjs';
 import { cleanUrl, inspectProduct } from './lib/product.mjs';
 import { checkPrices } from './lib/alerts.mjs';
 import { askShoppingAssistant } from './lib/assistant.mjs';
-import { CATEGORIES, categorizeProduct, validCategory } from './lib/categories.mjs';
+import { CATEGORIES, categorizeProduct, guessCategory, validCategory } from './lib/categories.mjs';
 import { sendPushAlert, validSubscription } from './lib/push.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
@@ -176,6 +176,25 @@ export const server = http.createServer(async (req, res) => {
       if (req.method === 'POST' && path === '/api/items') {
         const result = await saveFind(await body(req));
         return json(res, result.existing ? 200 : 201, result);
+      }
+      const previewMatch = /^\/api\/items\/([\w-]+)\/preview$/.exec(path);
+      if (previewMatch && req.method === 'POST') {
+        const before = store.get(previewMatch[1]);
+        if (!before) return json(res, 404, { error: 'Item not found.' });
+        let details;
+        try { details = await inspectProduct(before.url); }
+        catch { return json(res, 200, { message: 'The store did not provide a preview. Your saved link is still here.' }); }
+        const item = store.get(before.id);
+        if (!item) return json(res, 404, { error: 'Item not found.' });
+        const changes = {};
+        if (details.image) changes.image = details.image;
+        if (details.description) changes.description = details.description;
+        if (item.title === new URL(item.url).hostname && details.title) changes.title = details.title;
+        if (item.category_source !== 'manual') Object.assign(changes, guessCategory({
+          url: item.url, title: changes.title || item.title, description: changes.description || item.description, note: item.note
+        }));
+        store.update(item.id, changes);
+        return json(res, 200, { message: details.image ? 'Product preview updated.' : 'No image was available from this store.' });
       }
       const match = /^\/api\/items\/([\w-]+)$/.exec(path);
       if (match && req.method === 'PATCH') {

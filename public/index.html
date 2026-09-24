@@ -7,7 +7,7 @@
   <meta name="description" content="A quieter place to keep the things that caught your eye.">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/style.css?v=share-save-1">
+  <link rel="stylesheet" href="/style.css?v=product-preview-2">
   <title>Keep an Eye · A considered shopping list</title>
 </head>
 <body>
@@ -40,8 +40,8 @@
         <div id="empty" class="empty" hidden><div class="empty-mark">✳</div><h3>Your eye is the starting point.</h3><p>Start on a store’s product page. Share it to Keep an Eye, then find it here—sorted and ready for a price watch.</p><button class="secondary" id="empty-add">Set up saving from websites <span>↗</span></button></div>
       </section>
 
-      <section class="assistant-section" id="assistant-section">
-        <div><span class="eyebrow">A LITTLE PERSPECTIVE</span><h2>Ask about your edit.</h2><p>Compare what you’ve saved, find a theme, or decide what deserves your attention.</p></div>
+      <section class="assistant-section" id="assistant-section" hidden>
+        <div><span class="eyebrow">COMPARE SAVED PRODUCTS</span><h2>Help me choose.</h2><p>Compare what you’ve saved, find a theme, or decide what deserves your attention.</p></div>
         <form id="ask-form" class="ask-form"><label for="question" class="sr-only">Your question</label><input id="question" maxlength="500" placeholder="Which saved pieces work together?" required><button type="submit" aria-label="Ask assistant">↗</button></form>
         <div class="answer" id="answer" hidden></div>
         <p class="fine" id="ai-note">A quiet second opinion, grounded in your saved finds.</p>
@@ -80,6 +80,6 @@
     </div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=share-save-1"></script>
+  <script type="module" src="/app.js?v=product-preview-2"></script>
 </body>
 </html>

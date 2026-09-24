@@ -15,6 +15,11 @@ http.createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) { body += chunk; if (body.length > 4096) throw Error('Too large'); }
     const html = await render(JSON.parse(body).url);
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(html);
-  } catch { res.writeHead(502); res.end('Product rendering unavailable'); }
+  } catch (error) {
+    const code = /sandbox|Operation not permitted|Failed to move|namespace/i.test(error.message) ? 'sandbox_unavailable'
+      : /Executable doesn.t exist/i.test(error.message) ? 'browser_missing' : 'render_failed';
+    console.error('Renderer failure: ' + code);
+    res.writeHead(502, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: code }));
+  }
   finally { busy = false; }
 }).listen(Number(process.env.PORT) || 3001);

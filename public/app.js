@@ -144,9 +144,9 @@ function render() {
   const visible = items.filter(i =>
     (category === 'All' || i.category === category) &&
     (subcategory === 'All' || i.subcategory === subcategory) &&
-    (filter === 'all' || filter === 'drops' && i.price != null && i.baseline_price != null && i.price < i.baseline_price || filter === 'unpriced' && i.price == null) &&
+    (filter === 'all' || filter === 'drops' && i.price != null && i.baseline_price != null && i.price < i.baseline_price || filter === 'unpriced' && (i.price == null || i.extraction_status !== 'verified')) &&
     (!search || [i.title, i.description, i.note, i.url].some(value => String(value || '').toLocaleLowerCase().includes(search))));
-  const counts = { all: items.length, drops: items.filter(i => i.price != null && i.baseline_price != null && i.price < i.baseline_price).length, unpriced: items.filter(i => i.price == null).length };
+  const counts = { all: items.length, drops: items.filter(i => i.price != null && i.baseline_price != null && i.price < i.baseline_price).length, unpriced: items.filter(i => i.price == null || i.extraction_status !== 'verified').length };
   const labels = { all: 'All saved', drops: 'Price drops', unpriced: 'Waiting for price' };
   document.querySelectorAll('.status-filters .filter').forEach(button => {
     button.textContent = labels[button.dataset.filter] + ' (' + counts[button.dataset.filter] + ')';
@@ -271,10 +271,10 @@ function fillSubcategories(selected = 'Other') {
 }
 
 async function share(item) {
-  const data = { title: item.title, text: `Thought you might like this: ${item.title}`, url: item.url };
+  const data = { title: item.title, text: `Thought you might like this: ${item.title}`, url: item.selected_url || item.url };
   try {
     if (navigator.share) { await navigator.share(data); return; }
-    await navigator.clipboard.writeText(`${item.title} — ${item.url}`);
+    await navigator.clipboard.writeText(`${item.title} — ${item.selected_url || item.url}`);
     toast('Link copied. Paste it into WhatsApp, Messages, or Messenger.');
   } catch (error) { if (error.name !== 'AbortError') toast('Could not share the link. Try copying it from the store page.'); }
 }

@@ -47,3 +47,17 @@ test('a different product recommendation never substitutes for the saved product
   const p = variant('black', 100);p.offers.url='/unrelated-product';
   assert.equal(parseProduct(html(p),'https://store.example/shoe').price,null);
 });
+test('multiple offers for one product have independently selectable identities', () => {
+  const p = variant('black',100);p.offers=[
+    {'@type':'Offer',url:'/shoe?size=s',name:'Small',price:100,priceCurrency:'USD'},
+    {'@type':'Offer',url:'/shoe?size=l',name:'Large',price:80,priceCurrency:'USD'}
+  ];
+  const ambiguous=parseProduct(html(p),'https://store.example/shoe');
+  assert.equal(ambiguous.variants.length,2);
+  const chosen=parseProduct(html(p),'https://store.example/shoe',{variant_id:ambiguous.variants[1].id});
+  assert.equal(chosen.price,80);
+});
+test('malformed merchant offer URLs do not crash extraction or supply a price', () => {
+  const p=variant('black',100);p.offers.url='http://[';
+  assert.equal(parseProduct(html(p),'https://store.example/shoe').price,null);
+});

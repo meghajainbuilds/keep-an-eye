@@ -46,6 +46,16 @@ test('share-sheet credential is save-only, revocable, persistent, and never auth
     assert.equal(fixture.list().length, 1);
     assert.equal(fixture.get(item.id).note, 'Private note');
     assert.equal(fixture.get(item.id).target_price, null);
+    assert.equal(fixture.get(item.id).discount_percent, 20);
+    assert.equal(fixture.get(item.id).watch_enabled, 1);
+    assert.equal((await call('/api/items/' + item.id, 'PATCH', auth, { watch_enabled: false })).status, 401);
+    assert.equal((await call('/api/items/' + item.id, 'PATCH', session, { watch_enabled: 'no' })).status, 400);
+    assert.equal((await call('/api/items/' + item.id, 'PATCH', session, { watch_enabled: false })).status, 200);
+    await call('/api/capture', 'POST', auth, { url: item.url });
+    assert.equal(fixture.get(item.id).watch_enabled, 0);
+    assert.equal((await call('/api/items/' + item.id, 'PATCH', session, { watch_enabled: true })).status, 200);
+    assert.equal(fixture.get(item.id).watch_enabled, 1);
+    assert.equal((await (await call('/api/config', 'GET', session)).json()).savingSetupComplete, true);
     for (const [path, method] of [['/api/items', 'GET'], ['/api/items/' + item.id, 'DELETE'], ['/api/shortcut-token', 'POST'], ['/api/check-prices', 'POST']]) {
       assert.equal((await call(path, method, auth)).status, 401);
     }
@@ -56,6 +66,7 @@ test('share-sheet credential is save-only, revocable, persistent, and never auth
     assert.equal(fallback.status, 201);
     assert.match((await fallback.json()).message, /Saved to Keep an Eye/);
     assert.equal(fixture.byUrl('http://127.0.0.1/unreadable').price, null);
+    assert.equal(fixture.byUrl('http://127.0.0.1/unreadable').discount_percent, 20);
     const invalid = await call('/api/capture', 'POST', auth, { url: 'javascript:alert(1)' });
     assert.equal(invalid.status, 400);
     const error = await invalid.json();

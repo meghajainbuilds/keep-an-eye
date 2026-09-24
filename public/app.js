@@ -20,8 +20,8 @@ async function request(path, options = {}) {
   return data;
 }
 
-function showLogin() { clearShortcutKey(); $('#shortcut-setup').close(); app.hidden = true; loginView.hidden = false; $('#logout').hidden = true; }
-function showApp() { app.hidden = false; loginView.hidden = true; $('#logout').hidden = false; }
+function showLogin() { clearShortcutKey(); $('#shortcut-setup').close(); app.hidden = true; loginView.hidden = false; $('#logout').hidden = true; $('#open-settings').hidden = true; $('#settings').close(); }
+function showApp() { app.hidden = false; loginView.hidden = true; $('#logout').hidden = false; $('#open-settings').hidden = false; }
 function toast(message) { const el = $('#toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), 4800); }
 function money(price, currency) {
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(price); }
@@ -64,28 +64,40 @@ function card(item) {
   const prices = node('div', 'prices');
   if (item.price != null && item.currency) {
     prices.append(node('span', 'price', money(item.price, item.currency)));
-    if (item.target_price != null) prices.append(node('span', 'watch', `Watching ${money(item.target_price, item.currency)}`));
-    if (item.discount_percent != null) prices.append(node('span', 'watch', `${item.discount_percent}% drop`));
-    else prices.append(node('span', 'muted', 'Last observed price'));
-  } else {
-    prices.append(node('span', 'muted', 'Price not available'));
-    if (item.target_price != null || item.discount_percent != null) prices.append(node('span', 'watch', 'Watching, awaiting price'));
-  }
+    prices.append(node('span', 'muted', 'Last observed price'));
+    if (item.baseline_price != null && item.price < item.baseline_price) {
+      const drop = Math.floor((1 - item.price / item.baseline_price) * 100 + 1e-8);
+      prices.append(node('span', 'watch', drop + '% below starting price'));
+    }
+  } else prices.append(node('span', 'muted', 'Waiting for a price'));
   body.append(prices);
+  const watching = item.watch_enabled !== 0;
+  body.append(node('p', 'watch-status', watching
+    ? (item.price == null ? 'Watching · Waiting for a readable price' : 'Watching · Alert at 20% off')
+    : 'Watching stopped'));
+  if (watching && item.baseline_price != null && item.currency) body.append(node('p', 'fine',
+    'Starting price ' + money(item.baseline_price, item.currency) + ' · Alert at ' + money(Math.floor(item.baseline_price * 80) / 100, item.currency) + ' or less'));
   if (item.note) body.append(node('p', 'note', `“${item.note}”`));
   if (item.observed_at) body.append(node('p', 'fine', `Price checked ${new Date(item.observed_at).toLocaleDateString()}. Confirm at the store.`));
   const actions = node('div', 'card-actions');
   const visit = node('a', '', 'View ↗'); visit.href = item.url; visit.target = '_blank'; visit.rel = 'noopener noreferrer';
   actions.append(visit, action('Share ↗', () => share(item)), action('Edit', () => openEditor(item)), action('Remove', () => remove(item), 'delete'));
   body.append(actions);
-  const retry = action('Refresh preview', async () => {
-    retry.disabled = true; retry.textContent = 'Loading preview…';
+  const watchButton = action(watching ? 'Stop watching' : 'Resume watching', async () => {
+    watchButton.disabled = true;
+    try { await request('/api/items/' + item.id, { method: 'PATCH', body: JSON.stringify({ watch_enabled: !watching }) });
+      await load(); toast(watching ? 'Watching stopped. Product kept in your collection.' : 'Watching for a 20% drop.');
+    } catch (error) { toast(error.message); watchButton.disabled = false; }
+  }, 'subtle');
+  const tools = node('div', 'product-tools'); tools.append(watchButton);
+  const retry = action('Refresh details', async () => {
+    retry.disabled = true; retry.textContent = 'Checking…';
     try { const result = await request('/api/items/' + item.id + '/preview', { method: 'POST', body: '{}' });
       await load(); toast(result.message);
     } catch (error) { toast(error.message); }
-    finally { retry.disabled = false; retry.textContent = 'Refresh preview'; }
+    finally { retry.disabled = false; retry.textContent = 'Refresh details'; }
   }, 'subtle preview-retry');
-  body.append(retry); article.append(body); return article;
+  tools.append(retry); body.append(tools); article.append(body); return article;
 }
 
 function render() {
@@ -107,17 +119,26 @@ function render() {
   const visible = items.filter(i =>
     (category === 'All' || i.category === category) &&
     (subcategory === 'All' || i.subcategory === subcategory) &&
-    (filter === 'all' || filter === 'watching' && (i.target_price != null || i.discount_percent != null) || filter === 'unpriced' && i.price == null) &&
+    (filter === 'all' || filter === 'drops' && i.price != null && i.baseline_price != null && i.price < i.baseline_price || filter === 'unpriced' && i.price == null) &&
     (!search || [i.title, i.description, i.note, i.url].some(value => String(value || '').toLocaleLowerCase().includes(search))));
+  const counts = { all: items.length, drops: items.filter(i => i.price != null && i.baseline_price != null && i.price < i.baseline_price).length, unpriced: items.filter(i => i.price == null).length };
+  const labels = { all: 'All saved', drops: 'Price drops', unpriced: 'Waiting for price' };
+  document.querySelectorAll('.status-filters .filter').forEach(button => {
+    button.textContent = labels[button.dataset.filter] + ' (' + counts[button.dataset.filter] + ')';
+    button.setAttribute('aria-pressed', String(filter === button.dataset.filter));
+  });
   $('#items').replaceChildren(...visible.map(card));
   $('#empty').hidden = items.length !== 0 || filter !== 'all';
-  if (items.length && !visible.length) $('#items').append(node('p', 'muted', 'Nothing here yet. Try another filter.'));
+  if (!visible.length && (items.length || filter !== 'all')) $('#items').append(node('p', 'empty-filter',
+    filter === 'drops' ? 'No price drops yet. We check watched products daily.' :
+    filter === 'unpriced' ? 'No products are waiting for a price in this view.' : 'No products match. Try another category or search.'));
 }
 
 async function load() {
   try {
     const [list, settings] = await Promise.all([request('/api/items'), request('/api/config')]);
     items = list.items; config = settings; render(); showApp();
+    $('#saving-onboarding').hidden = config.savingSetupComplete;
     updatePushUI();
     $('#assistant-section').hidden = !config.assistant;
     const shared = new URL(location.href).searchParams.get('url');
@@ -137,6 +158,7 @@ async function load() {
 
 async function updatePushUI() {
   const status = $('#push-status');
+  $('#notification-nudge').hidden = false;
   $('#enable-push').hidden = true; $('#disable-push').hidden = true;
   if (!config.alerts) { status.textContent = 'Phone alerts need push keys on the server before you can turn them on.'; return; }
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
@@ -149,6 +171,7 @@ async function updatePushUI() {
   try {
     const registration = await navigator.serviceWorker.getRegistration('/');
     const subscription = await registration?.pushManager.getSubscription();
+    $('#notification-nudge').hidden = Boolean(subscription);
     status.textContent = subscription ? 'Price alerts are on for this phone.' : 'Turn on notifications so price drops appear on your phone.';
     $('#enable-push').hidden = Boolean(subscription);
     $('#disable-push').hidden = !subscription;
@@ -208,9 +231,7 @@ function openEditor(item = null, importedUrl = '') {
     $('#product-category').value = item.category || 'Other';
     fillSubcategories(item.subcategory);
   }
-  $('#product-target').value = item?.target_price ?? '';
-  $('#product-discount').value = item?.discount_percent ?? '';
-  $('#currency-hint').textContent = item?.currency ? `(${item.currency}, absolute price)` : '(absolute price, optional)';
+  $('#product-watch').checked = item?.watch_enabled !== 0;
   $('#save-button').textContent = editing ? 'Save changes ↗' : 'Save this find ↗';
   editor.showModal();
   if (!importedUrl) $('#product-url').focus();
@@ -246,6 +267,14 @@ $('#logout').addEventListener('click', async () => { await request('/api/logout'
 $('#open-add').addEventListener('click', () => openEditor());
 $('#empty-add').addEventListener('click', openShortcut);
 $('#open-shortcut').addEventListener('click', openShortcut);
+$('#onboarding-setup').addEventListener('click', openShortcut);
+$('#open-settings').addEventListener('click', () => { $('#settings').showModal(); updatePushUI(); });
+$('#notification-settings').addEventListener('click', () => { $('#settings').showModal(); updatePushUI(); });
+$('#close-settings').addEventListener('click', () => $('#settings').close());
+$('#complete-setup').addEventListener('click', async () => {
+  try { await request('/api/saving-setup', { method: 'POST', body: '{}' }); $('#saving-onboarding').hidden = true; }
+  catch (error) { toast(error.message); }
+});
 $('#close-dialog').addEventListener('click', closeEditor);
 $('#refresh').addEventListener('click', load);
 $('#enable-push').addEventListener('click', enablePush);
@@ -260,7 +289,7 @@ $('#editor-form').addEventListener('submit', async event => {
   event.preventDefault();
   const button = $('#save-button'); button.disabled = true; button.textContent = 'Saving…';
   $('#form-error').textContent = '';
-  const payload = { url: $('#product-url').value, title: $('#product-title').value, note: $('#product-note').value, target_price: $('#product-target').value, discount_percent: $('#product-discount').value };
+  const payload = { url: $('#product-url').value, title: $('#product-title').value, note: $('#product-note').value, watch_enabled: $('#product-watch').checked };
   if (editing) {
     const original = items.find(item => item.id === editing);
     if (original && (original.category !== $('#product-category').value || original.subcategory !== $('#product-subcategory').value))
@@ -271,7 +300,7 @@ $('#editor-form').addEventListener('submit', async event => {
       ? await request(`/api/items/${editing}`, { method: 'PATCH', body: JSON.stringify(payload) })
       : await request('/api/items', { method: 'POST', body: JSON.stringify(payload) });
     closeEditor(); await load(); toast(result.warning || (result.existing ? 'Already in your edit.' : 'Saved to your edit.'));
-    if (!config.alerts && (payload.target_price || payload.discount_percent)) toast('Saved the watch. Configure phone alerts and daily checks to receive notifications.');
+
   } catch (error) { $('#form-error').textContent = error.message; }
   finally { button.disabled = false; button.textContent = editing ? 'Save changes ↗' : 'Save this find ↗'; }
 });
@@ -288,6 +317,7 @@ function shortcutStatus() {
   $('#revoke-shortcut-key').hidden = !shortcutEnabled;
 }
 async function openShortcut() {
+  $('#settings').close();
   clearShortcutKey(); $('#shortcut-error').textContent = '';
   $('#shortcut-endpoint').textContent = location.origin + '/api/capture';
   $('#shortcut-setup').showModal();

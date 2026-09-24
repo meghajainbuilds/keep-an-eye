@@ -31,9 +31,9 @@ The app needs a public HTTPS URL and a **persistent disk** for `DATA_DIR`; tempo
 
 ### Save while shopping: one-time iPhone setup
 
-The primary flow is **product page → Share → Save to Keep an Eye → saved**. Open the app later to browse, edit categories, add notes, or set a price watch.
+The primary flow is **product page → Share → Save to Keep an Eye → saved**. Open the app later to browse, edit categories, add notes, or stop/resume automatic watching.
 
-Sign in and tap **Set up iPhone saving** for the complete guide and your private saving key. In Apple Shortcuts:
+Sign in and open **Settings → Manage iPhone saving** for the complete guide and your private saving key. In Apple Shortcuts:
 
 1. Create **Save to Keep an Eye** and enable **Show in Share Sheet**, accepting URLs and Safari web pages.
 2. Add **Get URLs from Input** with Shortcut Input, then **Get Item from List → First Item**.
@@ -84,6 +84,14 @@ This is a personal, open source prototype. See `LICENSE` for reuse terms.
 
 ## Product preview repair
 
-Images and titles open the saved original link. Refresh preview retries merchant metadata for a saved card while preserving its link, custom title, notes, manual category, and price-watch state. The optional comparison assistant is hidden when it is not configured.
+Images and titles open the saved original link. Refresh details retries merchant metadata and checks the price for a saved card while preserving its link, custom title, notes, manual category, and price-watch state. The optional comparison assistant is hidden when it is not configured.
 
 The Quince cardigan fixture contains observed Open Graph metadata from the Heather Pewter product page (September 24, 2026). It verifies the image and title, not a particular size or checkout price. Variant offers are not inferred from this preview fixture; price observation still requires an explicit offer with currency. Blocked pages remain saved links, with a compact missing-preview message. Fetches remain DNS-pinned and redirect-checked with a bounded 2 MB response limit.
+
+## Automatic watches and collection home
+
+Saving a product now starts a daily 20% watch against the first verified merchant price. Existing saved links without a threshold migrate to this default once. Stop/resume is explicit and persists across restarts; duplicate Shortcut saves do not re-enable a stopped watch. A price that remains under the threshold produces one accepted notification, then rearms only after rising above the threshold. Failed delivery is retried. Checks are serialized to prevent duplicate alerts from overlapping manual/scheduled checks, and currency mismatches never trigger alerts.
+
+The collection opens first. All saved, Price drops, and Waiting for price are counted filters with explanatory empty states. Price drops includes any observed drop; notifications use the 20% threshold. Shortcut setup and phone notification controls live in Settings. Successful Shortcut saves or “I’ve set this up” dismiss the onboarding card. Notification permission still requires the user's phone; an installed Shortcut alone does not enable push.
+
+Refresh details updates the first readable price and establishes a baseline for previously unpriced products. Preview repair in the earlier release only updated images/titles, which left the Quince cardigan unpriced until a price check ran. Metadata recovery does not invent a price or overwrite a manual title/category.

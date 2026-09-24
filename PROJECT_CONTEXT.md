@@ -39,3 +39,7 @@ After deployment, set GitHub Actions secrets `APP_URL` and `CRON_SECRET` for the
 - Product direction: shopping starts on any merchant website. The primary flow must be Share → Save to Keep an Eye. Manual paste is a fallback.
 - The in-app setup guide creates a revocable save-only key for a direct POST Shortcut. Apple Shortcuts setup still requires the user’s iPhone; no native iOS share extension or automatic installer is claimed. The old query-string import retains confirmation for safety.
 - An actual iPhone Shortcut run, native sharing, and visible phone push still need device testing.
+
+## September 24: collection home and automatic watching
+
+Megha approved building: collection first, all new/existing saves watched by default for at least a 20% drop, opt-out via Stop watching. Baseline is the first readable merchant price; daily checks, no duplicate low-price alerts until rebound. watch_enabled persists separately from thresholds. Shortcut setup and push controls are under Settings; no additional AI spending enabled. Her Shortcut successfully saved the Quince cardigan through share.google. Preview fetching was fixed in d4d165c; Refresh details now checks price too. Phone push delivery remains unverified until tested on her device.

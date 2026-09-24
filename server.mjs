@@ -92,7 +92,8 @@ async function saveFind(input) {
   const raced = store.byUrl(url);
   if (raced) return { item: raced, existing: true };
   const item = store.add({ url, ...details, title, note, ...classification,
-    target_price: target(input.target_price), discount_percent: discount(input.discount_percent) });
+    watch_enabled: input.watch_enabled !== false,
+    target_price: target(input.target_price), discount_percent: discount(input.discount_percent) ?? 20 });
   return { item, warning };
 }
 
@@ -108,6 +109,7 @@ export const server = http.createServer(async (req, res) => {
       const input = await body(req);
       // Save-only access: no notes, watch mutations, or collection data returned.
       const result = await saveFind({ url: input.url });
+      store.setSetting('saving_setup_complete', '1');
       return json(res, result.existing ? 200 : 201, {
         message: result.existing ? 'Already saved to Keep an Eye.' :
           result.warning ? 'Saved to Keep an Eye. Product details were unavailable; you can edit them later.' : 'Saved to Keep an Eye.'
@@ -157,8 +159,13 @@ export const server = http.createServer(async (req, res) => {
       }
       if (req.method === 'GET' && path === '/api/config') return json(res, 200, {
         assistant: Boolean(process.env.OPENAI_API_KEY), categories: CATEGORIES,
+        savingSetupComplete: store.getSetting('saving_setup_complete') === '1',
         alerts: pushReady, pushPublicKey: pushReady ? pushPublicKey : null
       });
+      if (req.method === 'POST' && path === '/api/saving-setup') {
+        store.setSetting('saving_setup_complete', '1');
+        return json(res, 200, { ok: true });
+      }
       if (req.method === 'POST' && path === '/api/push-subscriptions') {
         if (!pushReady) return json(res, 409, { error: 'Phone notifications are not configured.' });
         const subscription = await body(req);
@@ -194,12 +201,21 @@ export const server = http.createServer(async (req, res) => {
           url: item.url, title: changes.title || item.title, description: changes.description || item.description, note: item.note
         }));
         store.update(item.id, changes);
-        return json(res, 200, { message: details.image ? 'Product preview updated.' : 'No image was available from this store.' });
+        await checkPrices(store, { itemId: item.id, inspect: async () => details,
+          notify: pushReady ? ({ item, price }) => sendPushAlert(store, {
+            item, price, publicKey: pushPublicKey, privateKey: pushPrivateKey, subject: pushSubject
+          }) : null });
+        return json(res, 200, { message: details.price != null ? 'Product details and price updated.' : 'Preview refreshed. Still waiting for a readable price.' });
       }
       const match = /^\/api\/items\/([\w-]+)$/.exec(path);
       if (match && req.method === 'PATCH') {
         const item = store.get(match[1]); if (!item) return json(res, 404, { error: 'Item not found.' });
         const input = await body(req); const changes = {};
+        if (Object.hasOwn(input, 'watch_enabled')) {
+          if (typeof input.watch_enabled !== 'boolean') throw new Error('Choose a valid watch setting.');
+          changes.watch_enabled = input.watch_enabled ? 1 : 0;
+          if (input.watch_enabled && item.discount_percent == null && item.target_price == null) changes.discount_percent = 20;
+        }
         if (Object.hasOwn(input, 'title')) { changes.title = safeText(input.title, 180); if (!changes.title) throw new Error('Title cannot be empty.'); }
         if (Object.hasOwn(input, 'note')) changes.note = safeText(input.note, 500);
         if (Object.hasOwn(input, 'target_price')) { changes.target_price = target(input.target_price); changes.last_notified_at = null; }

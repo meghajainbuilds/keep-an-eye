@@ -2,7 +2,7 @@
 
 A personal shopping collection for things you want to find again. Save a product from any website on your phone, browse it by automatically assigned category and subcategory, and get a phone notification when a **readable merchant page** meets your price watch. Share the original link through your phone's native share sheet.
 
-Built as a **One Build a Week** project. The repository stays private until its creator decides to release it. Later, anyone can copy the code and run their own private instance with Node.js 24+ and `npm install`.
+Anyone can run a private instance with Node.js 24+ and `npm install`. This repository contains source code and synthetic tests, not a deployed collection.
 
 ## What works
 
@@ -27,7 +27,7 @@ No account or API key is needed to save, browse and share. To enable AI sorting 
 
 ## Put it on your phone
 
-The app needs a public HTTPS URL and a **persistent disk** for `DATA_DIR`; temporary server filesystems will lose your saved products and phone subscriptions. On Railway, connect the private GitHub repository, add a persistent volume and mount it at `/data`, set `DATA_DIR=/data`, set the secrets from `.env.example`, and run `npm start`. Confirm your Railway credit and usage limits before deploying. Use a single running instance because this version stores data in SQLite. Keep the app password private. This is a personal instance, not a multi-user service.
+The app needs a public HTTPS URL and a **persistent disk** for `DATA_DIR`; temporary server filesystems will lose your saved products and phone subscriptions. On Railway, connect your GitHub repository, add a persistent volume and mount it at `/data`, set `DATA_DIR=/data`, set the secrets from `.env.example`, and run `npm start`. Confirm your Railway credit and usage limits before deploying. Use a single running instance because this version stores data in SQLite. Keep the app password private. This is a personal instance, not a multi-user service.
 
 ### Save while shopping: one-time iPhone setup
 
@@ -36,7 +36,7 @@ The primary flow is **product page → Share → Save to Keep an Eye → saved**
 Sign in and open **Settings → Manage iPhone saving** for the complete guide and your private saving key. In Apple Shortcuts:
 
 1. Create **Save to Keep an Eye** and enable **Show in Share Sheet**, accepting URLs and Safari web pages.
-2. Add **Get URLs from Input** with Shortcut Input, then **Get Item from List → First Item**.
+2. Add **Get URLs from Input** with Shortcut Input. Keep only URLs beginning with `https://` or `http://`, then select **First Item** from the filtered results. Google shares can contain `source:` text that must not be selected as the product link. Stop with a message if no website URL remains.
 3. In the app, create a saving key and copy its authorization header.
 4. Add **Get Contents of URL**, using the address displayed in the app (`https://YOUR-APP/api/capture`). Set Method to POST. Add the Authorization header using the copied value (`Bearer YOUR_KEY`). Set Request Body to JSON; add a Text field named `url`, using the Item from List variable.
 5. Add **Get Dictionary Value → message** from Contents of URL, then **Show Result** with that value.
@@ -52,10 +52,10 @@ Unreadable store pages still save as links. Price alerts require a verified merc
 
 1. Generate a VAPID key pair locally with `node --input-type=module -e "import webpush from 'web-push'; console.log(webpush.generateVAPIDKeys())"`. Set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT=mailto:you@example.com` on Railway. Keep the private key out of GitHub. Keep these keys across redeployments so existing phone subscriptions continue working.
 2. On your iPhone, open the HTTPS app in Safari, choose **Share → Add to Home Screen**, and open it from the new icon. Sign in, then tap **Enable phone alerts** and allow notifications. On a supported desktop browser, you can enable alerts directly from the site. An iPhone requires iOS 16.4 or later for Home Screen web push.
-3. On GitHub, set repository **Actions secrets** `APP_URL` (the full HTTPS URL of your deployed app) and `CRON_SECRET` (the same value as your server). Enable Actions. The included workflow calls `/api/check-prices` daily at 15:23 UTC; you can run it manually under **Actions → Daily price check**.
+3. On GitHub, set repository **Actions secrets** `APP_URL` (the full HTTPS URL of your deployed app) and `CRON_SECRET` (the same value as your server). Enable Actions. The included workflow is manual-only under **Actions → Daily price check**. Configure a daily scheduler on your hosting provider to POST to `/api/check-prices` with the same bearer secret. Use one scheduler and keep its response out of public logs.
 4. Save a product and set **Notify me when it reaches** to an amount in the product's listed currency, or set a percentage drop from the first observed price. If you set both, either condition can trigger a notification. Check the store yourself before buying. For an unreadable product page or a page missing currency, you can still save a watch, but automatic alerting waits until a readable price is available.
 
-Scheduled GitHub workflows can run late. Alerts are approximate daily checks, not a guarantee that a promotion will be caught. The checker never sends an alert based on AI generated prices. A push service accepting an alert does not guarantee it appears on the phone. Variant selection, coupons, taxes, shipping and checkout prices are outside this version.
+Scheduled checks can run late. Alerts are approximate daily checks, not a guarantee that a promotion will be caught. The checker never sends an alert based on AI generated prices. A push service accepting an alert does not guarantee it appears on the phone. Variant selection, coupons, taxes, shipping and checkout prices are outside this version.
 
 ## Privacy and limits
 
@@ -86,7 +86,6 @@ This is a personal, open source prototype. See `LICENSE` for reuse terms.
 
 Images and titles open the saved original link. Refresh details retries merchant metadata and checks the price for a saved card while preserving its link, custom title, notes, manual category, and price-watch state. The optional comparison assistant is hidden when it is not configured.
 
-The Quince cardigan fixture contains observed Open Graph metadata from the Heather Pewter product page (September 24, 2026). It verifies the image and title, not a particular size or checkout price. Variant offers are not inferred from this preview fixture; price observation still requires an explicit offer with currency. Blocked pages remain saved links, with a compact missing-preview message. Fetches remain DNS-pinned and redirect-checked with a bounded 2 MB response limit.
 
 ## Automatic watches and collection home
 
@@ -94,4 +93,7 @@ Saving a product now starts a daily 20% watch against the first verified merchan
 
 The collection opens first. All saved, Price drops, and Waiting for price are counted filters with explanatory empty states. Price drops includes any observed drop; notifications use the 20% threshold. Shortcut setup and phone notification controls live in Settings. Successful Shortcut saves or “I’ve set this up” dismiss the onboarding card. Notification permission still requires the user's phone; an installed Shortcut alone does not enable push.
 
-Refresh details updates the first readable price and establishes a baseline for previously unpriced products. Preview repair in the earlier release only updated images/titles, which left the Quince cardigan unpriced until a price check ran. Metadata recovery does not invent a price or overwrite a manual title/category.
+
+## Security and privacy
+
+See SECURITY.md. Never commit a real environment file, SQLite database, personal collection, or production deployment configuration. Test fixtures are fictional. Publishing this source does not publish data held by a separately hosted private instance.

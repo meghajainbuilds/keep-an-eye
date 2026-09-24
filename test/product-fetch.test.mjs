@@ -6,12 +6,12 @@ import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { fetchProductHtml, parseProduct } from '../lib/product.mjs';
 
-const fixture = readFileSync(new URL('./fixtures/quince-cardigan.html', import.meta.url), 'utf8');
+const fixture = readFileSync(new URL('./fixtures/sample-product.html', import.meta.url), 'utf8');
 
-test('Quince preview uses merchant title and image without assuming a variant price', () => {
-  const product = parseProduct(fixture, 'https://share.google/example');
-  assert.equal(product.title, 'Luxe Baby Cashmere Cable Cardigan in Heather Pewter');
-  assert.match(product.image, /^https:\/\/images\.quince\.com\//);
+test('Product preview uses merchant title and image without assuming a variant price', () => {
+  const product = parseProduct(fixture, 'https://share.example/example');
+  assert.equal(product.title, 'Sample Knit Jacket in Slate');
+  assert.match(product.image, /^https:\/\/images\.store\.example\//);
   assert.ok(product.image.includes('&q=90'));
   assert.equal(product.price, null);
 });
@@ -34,8 +34,8 @@ test('fetch supports Node all-address lookup, larger product pages, redirects an
       requests++;
       const res = new EventEmitter();
       res.resume = () => {};
-      if (url.hostname === 'share.google') {
-        res.statusCode = 302; res.headers = { location: 'https://www.quince.com/cardigan' };
+      if (url.hostname === 'share.example') {
+        res.statusCode = 302; res.headers = { location: 'https://www.store.example/sample-product' };
         onResponse(res); return;
       }
       res.statusCode = 200; res.headers = { 'content-type': 'text/html' };
@@ -45,10 +45,10 @@ test('fetch supports Node all-address lookup, larger product pages, redirects an
     });
     return req;
   });
-  const html = await fetchProductHtml('https://share.google/example');
+  const html = await fetchProductHtml('https://share.example/example');
   assert.equal(requests, 2);
   assert.ok(html.length > 500_000);
-  assert.match(parseProduct(html, 'https://www.quince.com/cardigan').image, /images.quince.com/);
+  assert.match(parseProduct(html, 'https://www.store.example/sample-product').image, /images.store.example/);
   tooLarge = true;
-  await assert.rejects(fetchProductHtml('https://www.quince.com/cardigan'), /too large/);
+  await assert.rejects(fetchProductHtml('https://www.store.example/sample-product'), /too large/);
 });

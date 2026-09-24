@@ -19,14 +19,14 @@ test('new saves watch 20% by default; unreadable prices wait; stopped watches pe
       notify: async () => { sent++; } };
     await checkPrices(store, options);
     assert.equal(store.get(item.id).baseline_price, null);
-    price = 249.90;
+    price = 100.00;
     await checkPrices(store, options);
-    assert.equal(store.get(item.id).baseline_price, 249.90);
+    assert.equal(store.get(item.id).baseline_price, 100.00);
     assert.equal(sent, 0);
-    price = 199.93;
+    price = 80.01;
     await checkPrices(store, options);
     assert.equal(sent, 0);
-    price = 199.92;
+    price = 80.00;
     await Promise.all([checkPrices(store, options), checkPrices(store, options)]);
     assert.equal(sent, 1);
     store.update(item.id, { watch_enabled: 0 });
@@ -39,10 +39,10 @@ test('new saves watch 20% by default; unreadable prices wait; stopped watches pe
     store.update(item.id, { watch_enabled: 1 });
     await checkPrices(store, options);
     assert.equal(sent, 1);
-    price = 249.90; await checkPrices(store, options);
-    price = 190; await checkPrices(store, options);
+    price = 100.00; await checkPrices(store, options);
+    price = 75; await checkPrices(store, options);
     assert.equal(sent, 2);
-    assert.equal(store.get(item.id).baseline_price, 249.90);
+    assert.equal(store.get(item.id).baseline_price, 100.00);
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 

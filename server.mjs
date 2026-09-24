@@ -19,8 +19,9 @@ const pushPublicKey = process.env.VAPID_PUBLIC_KEY;
 const pushPrivateKey = process.env.VAPID_PRIVATE_KEY;
 const pushSubject = process.env.VAPID_SUBJECT;
 const pushReady = Boolean(pushPublicKey && pushPrivateKey && pushSubject);
-if (!password || !secret || secret.length < 32 || !cronSecret || cronSecret.length < 32) {
-  console.error('Set APP_PASSWORD, SESSION_SECRET and CRON_SECRET in .env (secrets at least 32 characters).');
+if (!password || password.length < 12 || !secret || secret.length < 32 || !cronSecret || cronSecret.length < 32 ||
+    secret === cronSecret || [password, secret, cronSecret].some(value => value.startsWith('replace-with-'))) {
+  console.error('Set a private APP_PASSWORD (at least 12 characters) and distinct SESSION_SECRET/CRON_SECRET values (at least 32 characters). Replace all example placeholders.');
   process.exit(1);
 }
 const store = createStore(process.env.DATA_DIR || join(root, 'data'));

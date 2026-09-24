@@ -56,7 +56,7 @@
       <p class="dialog-copy">Set this up once on your iPhone using Apple’s Shortcuts app. Keep this guide open while you build it. Your phone may ask permission to connect the first time.</p>
       <ol class="shortcut-steps">
         <li><strong>Create the Shortcut.</strong> Open Shortcuts, tap +, and name it <strong>Save to Keep an Eye</strong>. In Details, enable <strong>Show in Share Sheet</strong>. Accept <strong>URLs</strong> and <strong>Safari web pages</strong>.</li>
-        <li><strong>Get the product link.</strong> Add <strong>Get URLs from Input</strong>, using <strong>Shortcut Input</strong>. Add <strong>Get Item from List</strong> and choose <strong>First Item</strong> from those URLs.</li>
+        <li><strong>Get the product link.</strong> Add <strong>Get URLs from Input</strong>, using <strong>Shortcut Input</strong>. Keep only URLs beginning with <strong>https://</strong> or <strong>http://</strong>, then use <strong>Get Item from List → First Item</strong> on that filtered list. Google shares may include a <strong>source:</strong> entry; skip it. Stop with a message if no website URL remains.</li>
         <li><strong>Connect your collection.</strong> Create a private saving key below. It can add links, but cannot read or delete your finds.
           <p id="shortcut-key-status" role="status"></p>
           <button class="secondary" id="create-shortcut-key" type="button">Create saving key</button>

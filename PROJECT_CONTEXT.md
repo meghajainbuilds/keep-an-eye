@@ -12,7 +12,7 @@ The GitHub repository `meghajainbuilds/keep-an-eye` is **private** until Megha d
 
 - Draft pull request #1: https://github.com/meghajainbuilds/keep-an-eye/pull/1
 - Work branch: `codex/browse-categories-sms-alerts` (the name predates the switch away from SMS). The current application and phone push changes are on this branch; `main` does not have them yet.
-- Mobile web app with password sign-in, saved finds, search, editable categories and subcategories, iPhone Shortcut URL capture, and native share sheet for WhatsApp, SMS/Messages, Messenger, etc.
+- Mobile web app with password sign-in, saved finds, search, editable categories and subcategories, iPhone Shortcut direct POST capture, and native share sheet for WhatsApp, SMS/Messages, Messenger, etc.
 - Price targets and percentage drops checked against readable merchant prices, with browser push notifications. On iPhone, this requires adding the HTTPS site to Home Screen and enabling notifications there.
 - Optional OpenAI categorization when an API key is provided; local categorization works without one. The shopping assistant is also optional. Never invent prices.
 - Node 24+ app, SQLite on a persistent disk, single running instance. Eleven local tests and GitHub Actions passed as of the phone push PR. There has been no live phone notification test yet.
@@ -28,3 +28,14 @@ After deployment, set GitHub Actions secrets `APP_URL` and `CRON_SECRET` for the
 ## Next session prompt
 
 "Read AGENTS.md, PROJECT_CONTEXT.md, and README.md in this private repository. Help me deploy the draft branch to Railway using my Product Pass, then test a live phone notification. Take one small step at a time and tell me how to inspect each step. Keep the repo private and flag any ongoing cost before I enable it."
+
+
+## Deployment and capture update — September 23, 2026
+
+- Live app: https://keep-an-eye-production.up.railway.app, deployed from `codex/browse-categories-sms-alerts`. Keep the repository private.
+- Railway project `74dbcf4e-f7d0-4c89-964b-b17f38e0949a`, production environment `80378e9e-2a37-4ad8-b481-0a71ee8f1870`, web service `54cda175-29b1-4469-9d21-454ab9f2efe7`. Persistent /data volume, Node 24, one replica, npm test build gate.
+- Daily price checks now run in Railway service `daily-price-check` (`14b32e50-7083-4e03-a45d-61b1abb3c4f5`) at 15:23 UTC. It calls the web service over Railway private networking using a reference to its CRON_SECRET. Do not also enable GitHub scheduling without avoiding duplicate checks.
+- Megha confirmed $20 Railway credits. Optional OpenAI API features remain off. Credentials are in Railway Variables, never in this document.
+- Product direction: shopping starts on any merchant website. The primary flow must be Share → Save to Keep an Eye. Manual paste is a fallback.
+- The in-app setup guide creates a revocable save-only key for a direct POST Shortcut. Apple Shortcuts setup still requires the user’s iPhone; no native iOS share extension or automatic installer is claimed. The old query-string import retains confirmation for safety.
+- An actual iPhone Shortcut run, native sharing, and visible phone push still need device testing.

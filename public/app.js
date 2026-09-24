@@ -20,7 +20,7 @@ async function request(path, options = {}) {
   return data;
 }
 
-function showLogin() { app.hidden = true; loginView.hidden = false; $('#logout').hidden = true; }
+function showLogin() { clearShortcutKey(); $('#shortcut-setup').close(); app.hidden = true; loginView.hidden = false; $('#logout').hidden = true; }
 function showApp() { app.hidden = false; loginView.hidden = true; $('#logout').hidden = false; }
 function toast(message) { const el = $('#toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), 4800); }
 function money(price, currency) {
@@ -124,7 +124,7 @@ async function updatePushUI() {
   $('#enable-push').hidden = true; $('#disable-push').hidden = true;
   if (!config.alerts) { status.textContent = 'Phone alerts need push keys on the server before you can turn them on.'; return; }
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
-    status.textContent = 'On iPhone, add this site to your Home Screen from Safari, then open it there to enable alerts.';
+    status.textContent = 'On iPhone, add this site to your Home Screen from Safari or Chrome, then open it there to enable alerts.';
     return;
   }
   if (Notification.permission === 'denied') {
@@ -228,7 +228,8 @@ $('#login-form').addEventListener('submit', async event => {
 });
 $('#logout').addEventListener('click', async () => { await request('/api/logout', { method: 'POST', body: '{}' }); items = []; showLogin(); });
 $('#open-add').addEventListener('click', () => openEditor());
-$('#empty-add').addEventListener('click', () => openEditor());
+$('#empty-add').addEventListener('click', openShortcut);
+$('#open-shortcut').addEventListener('click', openShortcut);
 $('#close-dialog').addEventListener('click', closeEditor);
 $('#refresh').addEventListener('click', load);
 $('#enable-push').addEventListener('click', enablePush);
@@ -263,4 +264,43 @@ $('#ask-form').addEventListener('submit', async event => {
   try { answer.textContent = (await request('/api/ask', { method: 'POST', body: JSON.stringify({ question: $('#question').value }) })).answer; }
   catch (error) { answer.textContent = error.message; }
 });
+let shortcutEnabled = false;
+function clearShortcutKey() { $('#shortcut-key').value = ''; $('#shortcut-key-panel').hidden = true; }
+function shortcutStatus() {
+  $('#shortcut-key-status').textContent = shortcutEnabled ? 'A saving key is active. Keep using it, or replace it to set up again.' : 'No saving key is active yet.';
+  $('#create-shortcut-key').textContent = shortcutEnabled ? 'Replace saving key' : 'Create saving key';
+  $('#revoke-shortcut-key').hidden = !shortcutEnabled;
+}
+async function openShortcut() {
+  clearShortcutKey(); $('#shortcut-error').textContent = '';
+  $('#shortcut-endpoint').textContent = location.origin + '/api/capture';
+  $('#shortcut-setup').showModal();
+  try { shortcutEnabled = (await request('/api/shortcut-token')).enabled; shortcutStatus(); }
+  catch (error) { $('#shortcut-error').textContent = error.message; }
+}
+$('#close-shortcut').addEventListener('click', () => $('#shortcut-setup').close());
+$('#shortcut-setup').addEventListener('close', clearShortcutKey);
+$('#create-shortcut-key').addEventListener('click', async () => {
+  if (shortcutEnabled && !confirm('Replace the saving key? Update any existing Shortcut with the new key afterward.')) return;
+  const button = $('#create-shortcut-key'); button.disabled = true; $('#shortcut-error').textContent = '';
+  try {
+    const result = await request('/api/shortcut-token', { method: 'POST', body: '{}' });
+    $('#shortcut-key').value = result.token; $('#shortcut-key-panel').hidden = false;
+    shortcutEnabled = true; shortcutStatus();
+  } catch (error) { $('#shortcut-error').textContent = error.message; }
+  finally { button.disabled = false; }
+});
+$('#revoke-shortcut-key').addEventListener('click', async () => {
+  if (!confirm('Disable saving from your existing Shortcut? Your saved finds will stay.')) return;
+  try {
+    await request('/api/shortcut-token', { method: 'DELETE' });
+    clearShortcutKey(); shortcutEnabled = false; shortcutStatus();
+  } catch (error) { $('#shortcut-error').textContent = error.message; }
+});
+async function copySetup(value) {
+  try { await navigator.clipboard.writeText(value); toast('Copied. Paste it into Shortcuts.'); }
+  catch { $('#shortcut-error').textContent = 'Clipboard access failed. Allow clipboard access and try again.'; }
+}
+$('#copy-shortcut-key').addEventListener('click', () => copySetup('Bearer ' + $('#shortcut-key').value));
+$('#copy-shortcut-endpoint').addEventListener('click', () => copySetup(location.origin + '/api/capture'));
 load();

@@ -10,7 +10,7 @@ Built as a **One Build a Week** project. The repository stays private until its 
 | --- | --- |
 | Save from any site | Store the original public URL, including sites that block metadata. Add a title or note yourself. |
 | Find it later | Search titles, stores and notes. Browse Apparel → Dresses, Kids → Toys, Electronics → Audio, and more. Change the category when sorting misses. |
-| One tap phone capture | iPhone Shortcut passes the shared URL to the app. You confirm before saving. |
+| One tap phone capture | iPhone Share Sheet Shortcut saves the product URL directly using a revocable save-only key; no app switch or form. |
 | Price alert | Daily merchant page check; phone notification when an observed price is at or under your target, or has dropped by your chosen percentage from the first price observed. Requires a readable product offer with currency and phone notifications enabled. |
 | Share | The native Share Sheet lets you choose WhatsApp, Messages, Messenger, or any installed destination. Desktop falls back to copying the link. |
 | Automatic sorting | With `OPENAI_API_KEY`, OpenAI returns a constrained category and subcategory at save time. Without it or if it fails, local rules sort common items; uncertain items go under Other. Existing saved finds receive local categorization on startup. |
@@ -29,15 +29,24 @@ No account or API key is needed to save, browse and share. To enable AI sorting 
 
 The app needs a public HTTPS URL and a **persistent disk** for `DATA_DIR`; temporary server filesystems will lose your saved products and phone subscriptions. On Railway, connect the private GitHub repository, add a persistent volume and mount it at `/data`, set `DATA_DIR=/data`, set the secrets from `.env.example`, and run `npm start`. Confirm your Railway credit and usage limits before deploying. Use a single running instance because this version stores data in SQLite. Keep the app password private. This is a personal instance, not a multi-user service.
 
-Create an iPhone Shortcut called **Save to Keep an Eye**:
+### Save while shopping: one-time iPhone setup
 
-1. In Shortcut Details, enable **Show in Share Sheet** and accept **URLs** (or Safari web pages).
-2. Add **Get URLs from Input** with **Shortcut Input**. Add **URL Encode** to encode the resulting URL, including all characters.
-3. Add a **Text** action containing `https://YOUR-APP.example/?url=` followed by the encoded URL variable from step 2.
-4. Add **Open URLs** with that text as input.
-5. In Safari on a product page, tap **Share → Save to Keep an Eye**. The app opens with the link filled in; tap **Save this find**.
+The primary flow is **product page → Share → Save to Keep an Eye → saved**. Open the app later to browse, edit categories, add notes, or set a price watch.
 
-If your version of Shortcuts names an action differently, the important result is a URL of the form `https://YOUR-APP.example/?url=https%3A%2F%2Fstore.example%2Fitem`. You can first test it by pasting such a URL into Safari. Add the app to your Home Screen for quick access.
+Sign in and tap **Set up iPhone saving** for the complete guide and your private saving key. In Apple Shortcuts:
+
+1. Create **Save to Keep an Eye** and enable **Show in Share Sheet**, accepting URLs and Safari web pages.
+2. Add **Get URLs from Input** with Shortcut Input, then **Get Item from List → First Item**.
+3. In the app, create a saving key and copy its authorization header.
+4. Add **Get Contents of URL**, using the address displayed in the app (`https://YOUR-APP/api/capture`). Set Method to POST. Add the Authorization header using the copied value (`Bearer YOUR_KEY`). Set Request Body to JSON; add a Text field named `url`, using the Item from List variable.
+5. Add **Get Dictionary Value → message** from Contents of URL, then **Show Result** with that value.
+6. On a product page in Safari or Chrome, use Share → Save to Keep an Eye. Grant the requested connection permission on first use. The Shortcut displays the server result without opening the app or asking you to complete a form.
+
+This web app cannot install a Shortcut on your phone automatically. Setup must be completed once in Shortcuts. Do not share a Shortcut containing your private key.
+
+The saving key is separate from your password, permits only saving a URL, and returns no collection data. Its SHA-256 hash persists in SQLite. Replace or disable it from the setup guide; replacement immediately invalidates the old key. It is only shown once, held in the setup dialog, and cleared when the dialog closes or you sign out. Never put the key or password in URL parameters. Save requests use authenticated POST; opening a link never silently writes to the collection.
+
+Unreadable store pages still save as links. Price alerts require a verified merchant price with currency. Duplicate saves preserve your existing notes and watch settings. Legacy `/?url=...` links still open the confirmation form; use the POST Shortcut for direct saving.
 
 ## Get phone price alerts
 

@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual, randomBytes, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createStore } from './lib/store.mjs';
 import { cleanUrl, inspectProduct } from './lib/product.mjs';
@@ -24,6 +24,7 @@ if (!password || !secret || secret.length < 32 || !cronSecret || cronSecret.leng
 }
 const store = createStore(process.env.DATA_DIR || join(root, 'data'));
 const limit = new Map();
+const tokenHash = value => createHash('sha256').update(value).digest('hex');
 const equal = (a, b) => {
   const left = Buffer.from(String(a)); const right = Buffer.from(String(b));
   return left.length === right.length && timingSafeEqual(left, right);
@@ -37,7 +38,7 @@ const validSession = req => {
 };
 function json(res, status, data, headers = {}) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers });
-  res.end(JSON.stringify(data));
+  res.end(JSON.stringify(data.error ? { ...data, message: data.error } : data));
 }
 async function body(req) {
   let text = '';
@@ -76,9 +77,42 @@ const staticFiles = new Map([
   ['/icon.svg', ['icon.svg', 'image/svg+xml']]
 ]);
 
+async function saveFind(input) {
+  const url = cleanUrl(input.url);
+  const existing = store.byUrl(url);
+  if (existing) return { item: existing, existing: true };
+  let details = {}, warning = null;
+  try { details = await inspectProduct(url); }
+  catch { warning = 'Saved the link. The store did not provide product details, so add a title and check prices manually.'; }
+  const title = safeText(input.title, 180) || details.title || new URL(url).hostname;
+  const note = safeText(input.note, 500);
+  const classification = await categorizeProduct({ url, title, description: details.description, note },
+    process.env.OPENAI_API_KEY, process.env.OPENAI_CATEGORIZATION_MODEL);
+  // Another request may have saved this URL while enrichment was running.
+  const raced = store.byUrl(url);
+  if (raced) return { item: raced, existing: true };
+  const item = store.add({ url, ...details, title, note, ...classification,
+    target_price: target(input.target_price), discount_percent: discount(input.discount_percent) });
+  return { item, warning };
+}
+
 export const server = http.createServer(async (req, res) => {
   const path = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
   try {
+    if (req.method === 'POST' && path === '/api/capture') {
+      const supplied = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization || '')?.[1];
+      const savedHash = store.getSetting('shortcut_token_hash');
+      if (!supplied || !savedHash || !equal(tokenHash(supplied), savedHash))
+        return json(res, 401, { error: 'Shortcut key is missing or disabled. Open Keep an Eye to set it up again.' });
+      if (!sameOrigin(req)) return json(res, 403, { error: 'Invalid origin.' });
+      const input = await body(req);
+      // Save-only access: no notes, watch mutations, or collection data returned.
+      const result = await saveFind({ url: input.url });
+      return json(res, result.existing ? 200 : 201, {
+        message: result.existing ? 'Already saved to Keep an Eye.' :
+          result.warning ? 'Saved to Keep an Eye. Product details were unavailable; you can edit them later.' : 'Saved to Keep an Eye.'
+      });
+    }
     if (req.method === 'POST' && path === '/api/check-prices') {
       if (!cronSecret || !equal(req.headers.authorization || '', `Bearer ${cronSecret}`)) return json(res, 401, { error: 'Unauthorized.' });
       const result = await checkPrices(store, { notify: pushReady ? ({ item, price }) =>
@@ -109,6 +143,18 @@ export const server = http.createServer(async (req, res) => {
     if (path.startsWith('/api/')) {
       if (!validSession(req)) return json(res, 401, { error: 'Sign in to see your saved items.' });
       if (!sameOrigin(req)) return json(res, 403, { error: 'Invalid origin.' });
+      if (path === '/api/shortcut-token') {
+        if (req.method === 'GET') return json(res, 200, { enabled: Boolean(store.getSetting('shortcut_token_hash')) });
+        if (req.method === 'POST') {
+          const token = randomBytes(32).toString('base64url');
+          store.setSetting('shortcut_token_hash', tokenHash(token));
+          return json(res, 201, { token });
+        }
+        if (req.method === 'DELETE') {
+          store.setSetting('shortcut_token_hash', '');
+          return json(res, 200, { ok: true });
+        }
+      }
       if (req.method === 'GET' && path === '/api/config') return json(res, 200, {
         assistant: Boolean(process.env.OPENAI_API_KEY), categories: CATEGORIES,
         alerts: pushReady, pushPublicKey: pushReady ? pushPublicKey : null
@@ -128,20 +174,8 @@ export const server = http.createServer(async (req, res) => {
       }
       if (req.method === 'GET' && path === '/api/items') return json(res, 200, { items: store.list() });
       if (req.method === 'POST' && path === '/api/items') {
-        const input = await body(req);
-        const url = cleanUrl(input.url);
-        const existing = store.byUrl(url);
-        if (existing) return json(res, 200, { item: existing, existing: true });
-        let details = {}, warning = null;
-        try { details = await inspectProduct(url); }
-        catch { warning = 'Saved the link. The store did not provide product details, so add a title and check prices manually.'; }
-        const title = safeText(input.title, 180) || details.title || new URL(url).hostname;
-        const note = safeText(input.note, 500);
-        const classification = await categorizeProduct({ url, title, description: details.description, note },
-          process.env.OPENAI_API_KEY, process.env.OPENAI_CATEGORIZATION_MODEL);
-        const item = store.add({ url, title, note: safeText(input.note, 500), ...details, title,
-          ...classification, target_price: target(input.target_price), discount_percent: discount(input.discount_percent) });
-        return json(res, 201, { item, warning });
+        const result = await saveFind(await body(req));
+        return json(res, result.existing ? 200 : 201, result);
       }
       const match = /^\/api\/items\/([\w-]+)$/.exec(path);
       if (match && req.method === 'PATCH') {

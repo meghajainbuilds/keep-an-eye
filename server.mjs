@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { captureDiagnostic } from './lib/capture-diagnostic.mjs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHmac, timingSafeEqual, randomBytes, createHash } from 'node:crypto';
@@ -108,7 +109,16 @@ export const server = http.createServer(async (req, res) => {
       if (!sameOrigin(req)) return json(res, 403, { error: 'Invalid origin.' });
       const input = await body(req);
       // Save-only access: no notes, watch mutations, or collection data returned.
-      const result = await saveFind({ url: input.url });
+      let url;
+      try { url = cleanUrl(input?.url); }
+      catch (error) {
+        store.setSetting('capture_diagnostic', JSON.stringify({
+          at: new Date().toISOString(), status: 'rejected', ...captureDiagnostic(input?.url)
+        }));
+        return json(res, 400, { error: 'This shared link could not be read. A diagnostic has been recorded in Keep an Eye; no Shortcut changes are needed.' });
+      }
+      const result = await saveFind({ url });
+      store.setSetting('capture_diagnostic', JSON.stringify({ at: new Date().toISOString(), status: 'accepted', ...captureDiagnostic(input?.url) }));
       store.setSetting('saving_setup_complete', '1');
       return json(res, result.existing ? 200 : 201, {
         message: result.existing ? 'Already saved to Keep an Eye.' :
@@ -145,6 +155,11 @@ export const server = http.createServer(async (req, res) => {
     if (path.startsWith('/api/')) {
       if (!validSession(req)) return json(res, 401, { error: 'Sign in to see your saved items.' });
       if (!sameOrigin(req)) return json(res, 403, { error: 'Invalid origin.' });
+      if (req.method === 'GET' && path === '/api/capture-diagnostic') {
+        const saved = store.getSetting('capture_diagnostic');
+        const diagnostic = saved ? JSON.parse(saved) : null;
+        return json(res, 200, { diagnostic: diagnostic && Date.now() - Date.parse(diagnostic.at) < 86400000 ? diagnostic : null });
+      }
       if (path === '/api/shortcut-token') {
         if (req.method === 'GET') return json(res, 200, { enabled: Boolean(store.getSetting('shortcut_token_hash')) });
         if (req.method === 'POST') {

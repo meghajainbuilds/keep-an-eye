@@ -71,6 +71,11 @@ test('share-sheet credential is save-only, revocable, persistent, and never auth
     assert.equal(invalid.status, 400);
     const error = await invalid.json();
     assert.equal(error.message, error.error);
+    assert.equal((await call('/api/capture-diagnostic', 'GET', auth)).status, 401);
+    const diagnostic = await (await call('/api/capture-diagnostic', 'GET', session)).json();
+    assert.equal(diagnostic.diagnostic.scheme, 'javascript');
+    assert.equal(diagnostic.diagnostic.status, 'rejected');
+    assert.ok(!JSON.stringify(diagnostic).includes('alert(1)'));
     const replacement = await (await call('/api/shortcut-token', 'POST', session, {})).json();
     assert.notEqual(replacement.token, token);
     assert.equal((await call('/api/capture', 'POST', auth, { url: item.url })).status, 401);

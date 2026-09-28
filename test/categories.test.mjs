@@ -49,7 +49,7 @@ test('migrates an older saved collection and preserves manual edits on reopen', 
 });
 
 test('product names outrank styling suggestions and include clothing vocabulary', () => {
-  for (const title of ['Cotton Oxford Shirt','Dress Shirt','Fleece Pullover','Cashmere Jumper','Striped Camisole']) {
+  for (const title of ['Cotton Oxford Shirt','Dress Shirt','Fleece Pullover','Cashmere Jumper','Striped Camisole','Cotton Linen Polo','Cashmere Striped Polo','Organic Twill Bralette']) {
     assert.deepEqual(guessCategory({title,description:'Style with a dress and boots'}),{category:'Apparel',subcategory:'Tops'});
   }
   assert.equal(guessCategory({title:'Weekday Tote'}).subcategory,'Accessories');

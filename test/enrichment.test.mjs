@@ -60,3 +60,15 @@ test('a common price becoming a range preserves last observation and cannot trig
     assert.equal(store.get(item.id).price,100); assert.equal(store.get(item.id).baseline_price,100); assert.equal(sent,0);
   }finally{store.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+test('parser revision requeues historical failures once and preserves watch preferences',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'keep-upgrade-'));let store=createStore(dir);
+ try {
+  const item=store.add({url:'https://store.example/polo',title:'Fictional Polo',watch_enabled:false});
+  store.update(item.id,{extraction_status:'unavailable',retry_count:3,next_attempt_at:null});
+  store.setSetting('extraction_revision','previous');store.close();store=createStore(dir);
+  assert.equal(store.get(item.id).extraction_status,'pending');assert.equal(store.get(item.id).retry_count,0);assert.equal(store.get(item.id).watch_enabled,0);
+  store.update(item.id,{extraction_status:'unavailable',retry_count:3});store.close();store=createStore(dir);
+  assert.equal(store.get(item.id).extraction_status,'unavailable');assert.equal(store.get(item.id).retry_count,3);
+ }finally{store.close();rmSync(dir,{recursive:true,force:true});}
+});

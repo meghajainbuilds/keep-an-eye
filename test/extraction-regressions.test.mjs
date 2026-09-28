@@ -81,3 +81,30 @@ test('whole-product From prices remain distinct from exact-variant prices',()=>{
   const exact=parse('color-prices','/sweater',{variant_id:'brown-s'});
   assert.equal(exact.price,55); assert.equal(exact.variant_id,'brown-s');
 });
+
+test('equivalent percent-encoded canonical paths retain whole-product offers',()=>{
+  const html='<link rel="canonical" href="https://store.example/products/caf%c3%a9-top"><script type="application/ld+json">'+JSON.stringify({'@type':'Product',name:'Fictional Top',url:'https://store.example/products/caf%C3%A9-top',image:'https://store.example/top.jpg',offers:[{'@type':'Offer',sku:'a',url:'https://store.example/products/caf%C3%A9-top?variant=1',price:40,priceCurrency:'USD'},{'@type':'Offer',sku:'b',url:'https://store.example/products/caf%C3%A9-top?variant=2',price:45,priceCurrency:'USD'}]})+'</script>';
+  const result=parseProduct(html,'https://store.example/products/caf%C3%A9-top',{scope:'product'});
+  assert.equal(result.price,40);assert.equal(result.extraction_status,'verified');
+});
+test('whole-product scope accepts corroborated offer aliases despite affiliate query parameters',()=>{
+  const html='<link rel="canonical" href="https://store.example/p/jeans-123"><script type="application/ld+json">'+JSON.stringify({'@type':'Product',name:'Fictional Jeans',mpn:'123',image:'https://store.example/jeans.jpg',offers:{'@type':'Offer',url:'https://store.example/p/jeans',price:65,priceCurrency:'USD'}})+'</script>';
+  const result=parseProduct(html,'https://store.example/p/jeans-123?affiliate_campaign=abc',{scope:'product'});
+  assert.equal(result.price,65);assert.equal(result.image,'https://store.example/jeans.jpg');
+  assert.equal(parseProduct(html,'https://store.example/p/jeans-123?size=unknown').price,null);
+});
+
+test('blocked HTML uses public product data and same-locale merchant currency',async()=>{
+ const seen=[];const product={title:'Fictional Polo',handle:'polo',featured_image:'/polo.jpg',options:['Size'],variants:[{id:1,price:8900,available:true,options:['M']}]};
+ const resource=async url=>{seen.push(url);if(!url.endsWith('.js'))throw Error('HTML blocked');return {url,body:Buffer.from(JSON.stringify(url.endsWith('/cart.js')?{currency:'USD'}:product))};};
+ const p=await inspectProduct('https://store.example/en-us/products/polo?campaign=abc',{scope:'product',resource});
+ assert.equal(p.price,89);assert.equal(p.currency,'USD');assert.equal(p.title,'Fictional Polo');assert.equal(p.image,'https://store.example/polo.jpg');
+ assert.ok(seen.includes('https://store.example/en-us/cart.js'));
+});
+test('public commerce fallback rejects a wrong product, absent currency and cross-origin responses',async()=>{
+ for(const mode of ['wrong-product','missing-currency','cross-origin']){
+  const product={title:'Fictional Polo',handle:mode==='wrong-product'?'other':'polo',variants:[{id:1,price:8900,available:true}]};
+  const resource=async url=>{if(!url.endsWith('.js'))throw Error('blocked');return {url:mode==='cross-origin'?'https://other.example/products/polo.js':url,body:Buffer.from(JSON.stringify(url.endsWith('/cart.js')?{}:product))};};
+  const p=await inspectProduct('https://store.example/products/polo',{scope:'product',resource});assert.equal(p.price,null);
+ }
+});

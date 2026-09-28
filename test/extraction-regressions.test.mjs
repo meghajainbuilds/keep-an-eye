@@ -108,3 +108,20 @@ test('public commerce fallback rejects a wrong product, absent currency and cros
   const p=await inspectProduct('https://store.example/products/polo',{scope:'product',resource});assert.equal(p.price,null);
  }
 });
+
+test('broken relative product image falls back to a working social image without changing price',async()=>{
+ const url='https://store.example/catalog/top';
+ const html='<meta property="og:image" content="https://media.example/top.jpg"><script type="application/ld+json">'+JSON.stringify({'@type':'Product',name:'Fictional Top',image:'img/top.jpg',offers:{price:70,priceCurrency:'USD'}})+'</script>';
+ const resource=async()=>({url,body:Buffer.from(html)});
+ for(const badResponse of ['html','404']) {
+  const seen=[];
+  const imageResource=async(image,depth,htmlOnly,accept,method)=>{seen.push(image);assert.equal(method,'HEAD');assert.equal(accept,'image/*');if(image.includes('/catalog/img/')){if(badResponse==='404')throw Object.assign(Error('missing'),{statusCode:404});return {contentType:'text/html'};}return {contentType:'image/jpeg'};};
+  const result=await inspectProduct(url,{scope:'product',resource,imageResource});
+  assert.equal(result.price,70);assert.equal(result.image,'https://media.example/top.jpg');assert.equal(seen.length,2);
+ }
+});
+test('image-header restrictions do not erase a potentially working browser image',async()=>{
+ const url='https://store.example/top';const html='<meta property="og:image" content="https://media.example/top.jpg">';
+ const result=await inspectProduct(url,{resource:async()=>({url,body:Buffer.from(html)}),imageResource:async()=>{throw Object.assign(Error('HEAD denied'),{statusCode:403});}});
+ assert.equal(result.image,'https://media.example/top.jpg');
+});

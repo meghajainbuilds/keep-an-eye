@@ -27,9 +27,9 @@ test('same-origin commerce endpoint supplies missing option labels without crede
  t.mock.method(dns.promises,'lookup',async()=>[{address:'93.184.215.14',family:4}]);
  const requests=[];
  t.mock.method(https,'get',(url,options,callback)=>{
-  requests.push(url.href);const req=new EventEmitter();req.destroy=e=>req.emit('error',e);
+  requests.push(url.href);if(url.hostname==='images.example'){assert.equal(options.method,'HEAD');assert.equal(options.headers.authorization,undefined);}const req=new EventEmitter();req.destroy=e=>req.emit('error',e);
   queueMicrotask(()=>{
-   const res=new EventEmitter();res.resume=()=>{};res.statusCode=200;res.headers={'content-type':url.pathname.endsWith('.js')?'application/json':'text/html'};callback(res);
+   const res=new EventEmitter();res.resume=()=>{};res.statusCode=200;res.headers={'content-type':url.hostname==='images.example'?'image/jpeg':url.pathname.endsWith('.js')?'application/json':'text/html'};callback(res);
    const content=url.pathname.endsWith('.js')?JSON.stringify({title:'Fictional Wool Jacket',handle:'jacket',options:[{name:'Size'},{name:'Color'}],variants:[{id:201,sku:'JACKET-201',options:['4','Ochre'],price:20000,available:true}]}):fixture('commerce-endpoint');
    res.emit('data',Buffer.from(content));res.emit('end');
   });return req;
@@ -37,7 +37,7 @@ test('same-origin commerce endpoint supplies missing option labels without crede
  const d=await inspectProduct('https://store.example/products/jacket',{scope:'product'});
  assert.equal(d.price,200);assert.equal(d.variants.length,1);
  assert.deepEqual(d.variants[0].attributes,{Size:'4',Color:'Ochre'});
- assert.deepEqual(requests,['https://store.example/products/jacket','https://store.example/products/jacket.js']);
+ assert.deepEqual(requests,['https://store.example/products/jacket','https://store.example/products/jacket.js','https://images.example/tee.jpg']);
 });
 test('Google ProductGroup references, size objects and sale price specifications',()=>{
  const group={'@type':'ProductGroup','@id':'#group',url:tee,name:'Fictional Tee',hasVariant:[{'@id':'#black'},{'@id':'#red'}]};

@@ -53,7 +53,7 @@ test('product names outrank styling suggestions and include clothing vocabulary'
     assert.deepEqual(guessCategory({title,description:'Style with a dress and boots'}),{category:'Apparel',subcategory:'Tops'});
   }
   assert.equal(guessCategory({title:'Weekday Tote'}).subcategory,'Accessories');
-  assert.equal(guessCategory({title:'Pleated Trousers'}).subcategory,'Bottoms');
+  for (const title of ['Pleated Trousers','Twill Barrel Leg Pant','Linen Trouser']) assert.equal(guessCategory({title}).subcategory,'Bottoms');
   assert.equal(guessCategory({title:'Dress Shoes'}).category,'Shoes');
   assert.equal(guessCategory({title:'Simple Pullover',url:'https://store.example/kids/knitwear'}).category,'Kids');
   assert.equal(guessCategory({title:'store.example',url:'https://store.example/women/all%20tops/soft%20tee'}).subcategory,'Tops');

@@ -96,7 +96,7 @@ test('whole-product scope accepts corroborated offer aliases despite affiliate q
 
 test('blocked HTML uses public product data and same-locale merchant currency',async()=>{
  const seen=[];const product={title:'Fictional Polo',handle:'polo',featured_image:'/polo.jpg',options:['Size'],variants:[{id:1,price:8900,available:true,options:['M']}]};
- const resource=async url=>{seen.push(url);if(!url.endsWith('.js'))throw Error('HTML blocked');return {url,body:Buffer.from(JSON.stringify(url.endsWith('/cart.js')?{currency:'USD'}:product))};};
+ const resource=async (url,depth,htmlOnly,accept)=>{seen.push(url);if(url.endsWith('.js'))assert.equal(accept,'application/json');if(!url.endsWith('.js'))throw Error('HTML blocked');return {url,body:Buffer.from(JSON.stringify(url.endsWith('/cart.js')?{currency:'USD'}:product))};};
  const p=await inspectProduct('https://store.example/en-us/products/polo?campaign=abc',{scope:'product',resource});
  assert.equal(p.price,89);assert.equal(p.currency,'USD');assert.equal(p.title,'Fictional Polo');assert.equal(p.image,'https://store.example/polo.jpg');
  assert.ok(seen.includes('https://store.example/en-us/cart.js'));

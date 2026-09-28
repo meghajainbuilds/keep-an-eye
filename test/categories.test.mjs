@@ -47,3 +47,19 @@ test('migrates an older saved collection and preserves manual edits on reopen', 
     reopened.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('product names outrank styling suggestions and include clothing vocabulary', () => {
+  for (const title of ['Cotton Oxford Shirt','Dress Shirt','Fleece Pullover','Cashmere Jumper','Striped Camisole']) {
+    assert.deepEqual(guessCategory({title,description:'Style with a dress and boots'}),{category:'Apparel',subcategory:'Tops'});
+  }
+  assert.equal(guessCategory({title:'Weekday Tote'}).subcategory,'Accessories');
+  assert.equal(guessCategory({title:'Pleated Trousers'}).subcategory,'Bottoms');
+  assert.equal(guessCategory({title:'Dress Shoes'}).category,'Shoes');
+  assert.equal(guessCategory({title:'Simple Pullover',url:'https://store.example/kids/knitwear'}).category,'Kids');
+  assert.equal(guessCategory({title:'store.example',url:'https://store.example/women/all%20tops/soft%20tee'}).subcategory,'Tops');
+  assert.equal(guessCategory({title:'Wool Pullover',description:'Adults and kids love the brand'}).category,'Apparel');
+});
+
+test('generic shop title does not hide a specific category in a decoded product URL',()=>{
+  assert.deepEqual(guessCategory({title:'Super Soft Organic Apparel',url:'https://store.example/women/all%20tops/soft%20tee'}),{category:'Apparel',subcategory:'Tops'});
+});

@@ -67,6 +67,7 @@ function target(value) {
 }
 function discount(value) {
   if (value === '' || value == null) return null;
+  if (typeof value !== 'number' && !(typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim()))) throw new Error('Enter a discount from 1% to 90%.');
   const n = Number(value);
   if (!Number.isFinite(n) || n < 1 || n > 90) throw new Error('Enter a discount from 1% to 90%.');
   return Math.round(n);
@@ -214,11 +215,29 @@ export const server = http.createServer(async (req, res) => {
         const input = await body(req);
         const variant = JSON.parse(item.variants_json || '[]').find(v => v.id === input.variant_id);
         if (!variant) return json(res, 400, { error: 'Choose a valid product variant.' });
-        store.update(item.id, { selected_url: variant.url ? cleanUrl(variant.url) : item.url, variant_id: variant.id, variant_label: variant.label,
-          price: null, baseline_price: null, currency: null, price_source: null, image: null,
-          observed_at: null, last_notified_at: null });
+        const watch = store.addWatch(item.id, variant, {
+          target_price: target(input.target_price), discount_percent: discount(input.discount_percent) ?? 20
+        });
         enrichment.enqueue(item.id);
-        return json(res, 202, { message: 'Finding the price for your selected variant.' });
+        return json(res, 202, { watch, message: 'Variant alert saved. Checking its exact price.' });
+      }
+      const watchMatch = /^\/api\/items\/([\w-]+)\/watches\/([\w-]+)$/.exec(path);
+      if (watchMatch) {
+        const watch = store.getWatch(watchMatch[2]);
+        if (!watch || watch.item_id !== watchMatch[1]) return json(res, 404, { error: 'Watch not found.' });
+        if (req.method === 'DELETE') { store.removeWatch(watch.id); return json(res, 200, { ok: true }); }
+        if (req.method === 'PATCH') {
+          const input = await body(req); const changes = {};
+          if (Object.hasOwn(input, 'watch_enabled')) {
+            if (typeof input.watch_enabled !== 'boolean') throw new Error('Choose a valid watch setting.');
+            changes.watch_enabled = input.watch_enabled ? 1 : 0;
+          }
+          if (Object.hasOwn(input, 'discount_percent')) { changes.discount_percent = discount(input.discount_percent); if (changes.discount_percent !== watch.discount_percent) changes.last_notified_at = null; }
+          if (Object.hasOwn(input, 'target_price')) { changes.target_price = target(input.target_price); if (changes.target_price !== watch.target_price) changes.last_notified_at = null; }
+          const updated = store.updateWatch(watch.id, changes);
+          if (input.watch_enabled === true) enrichment.enqueue(watch.item_id);
+          return json(res, 200, { watch: updated });
+        }
       }
       const match = /^\/api\/items\/([\w-]+)$/.exec(path);
       if (match && req.method === 'PATCH') {
@@ -231,8 +250,8 @@ export const server = http.createServer(async (req, res) => {
         }
         if (Object.hasOwn(input, 'title')) { changes.title = safeText(input.title, 180); if (!changes.title) throw new Error('Title cannot be empty.'); }
         if (Object.hasOwn(input, 'note')) changes.note = safeText(input.note, 500);
-        if (Object.hasOwn(input, 'target_price')) { changes.target_price = target(input.target_price); changes.last_notified_at = null; }
-        if (Object.hasOwn(input, 'discount_percent')) { changes.discount_percent = discount(input.discount_percent); changes.last_notified_at = null; }
+        if (Object.hasOwn(input, 'target_price')) { changes.target_price = target(input.target_price); if (changes.target_price !== item.target_price) changes.last_notified_at = null; }
+        if (Object.hasOwn(input, 'discount_percent')) { changes.discount_percent = discount(input.discount_percent); if (changes.discount_percent !== item.discount_percent) changes.last_notified_at = null; }
         if (Object.hasOwn(input, 'category') || Object.hasOwn(input, 'subcategory')) {
           const category = input.category ?? item.category;
           const subcategory = input.subcategory ?? item.subcategory;

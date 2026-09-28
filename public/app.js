@@ -21,7 +21,7 @@ async function request(path, options = {}) {
   return data;
 }
 
-function showLogin() { clearShortcutKey(); $('#shortcut-setup').close(); app.hidden = true; loginView.hidden = false; $('#logout').hidden = true; $('#open-settings').hidden = true; $('#settings').close(); }
+function showLogin() { clearShortcutKey(); $('#shortcut-setup').close(); app.hidden = true; loginView.hidden = false; $('#logout').hidden = true; $('#open-settings').hidden = true; $('#settings').close(); $('#alerts-editor').close(); }
 function showApp() { app.hidden = false; loginView.hidden = true; $('#logout').hidden = false; $('#open-settings').hidden = false; }
 function toast(message) { const el = $('#toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), 4800); }
 function money(price, currency) {
@@ -64,8 +64,8 @@ function card(item) {
   heading.append(titleLink); body.append(heading);
   const prices = node('div', 'prices');
   if (item.price != null && item.currency) {
-    prices.append(node('span', 'price', money(item.price, item.currency)));
-    prices.append(node('span', 'muted', 'Last observed price'));
+    prices.append(node('span', 'price', (item.price_kind === 'from' ? 'From ' : '') + money(item.price, item.currency)));
+    prices.append(node('span', 'muted', item.price_kind === 'from' ? 'Lowest available offer on this product page' : 'Last observed price'));
     if (item.baseline_price != null && item.price < item.baseline_price) {
       const drop = Math.floor((1 - item.price / item.baseline_price) * 100 + 1e-8);
       prices.append(node('span', 'watch', drop + '% below starting price'));
@@ -79,7 +79,8 @@ function card(item) {
     : status === 'out_of_stock' ? 'Out of stock · Price alerts waiting'
     : status !== 'verified' ? 'Price could not be verified · Will retry'
     : item.discount_percent != null ? `Watching · Alert at ${item.discount_percent}% off` : 'Watching your target price';
-  body.append(node('p', 'watch-status', watching ? label : 'Watching stopped'));
+  body.append(node('p', 'watch-status', watching ? label : 'Product alert paused'));
+  if (item.matched_variant && item.price_kind === 'from') body.append(node('p', 'fine', 'Lowest offer: ' + item.matched_variant));
   if (item.variant_label) body.append(node('p', 'fine', 'Selected: ' + item.variant_label));
   if (watching && item.baseline_price != null && item.currency) {
     const targets = [];
@@ -87,31 +88,19 @@ function card(item) {
     if (item.target_price != null) targets.push(money(item.target_price, item.currency));
     body.append(node('p', 'fine', 'Starting price ' + money(item.baseline_price, item.currency) + ' · Alert at ' + targets.join(' or ') + ' or less'));
   }
-  const variants = JSON.parse(item.variants_json || '[]');
-  if (variants.length > 1 || status === 'needs_variant' && variants.length) {
-    const select = node('select'); select.setAttribute('aria-label', 'Choose a product variant');
-    const placeholder = node('option', '', 'Choose color / size'); placeholder.value = ''; select.append(placeholder);
-    for (const variant of variants) { const option = node('option', '', variant.label); option.value = variant.id; select.append(option); }
-    select.value = item.variant_id || '';
-    select.addEventListener('change', async () => {
-      if (!select.value) return;
-      select.disabled = true;
-      try { const result = await request('/api/items/' + item.id + '/variant', { method: 'POST', body: JSON.stringify({ variant_id: select.value }) });
-        await load(); toast(result.message);
-      } catch (error) { toast(error.message); select.disabled = false; }
-    });
-    body.append(select);
-  }
+  const exactWatches = item.variant_watches || [];
+  if (exactWatches.length) body.append(node('p', 'fine', exactWatches.filter(w => w.watch_enabled).length + ' specific variant alerts enabled'));
+  body.append(action('Price alerts · Product & variants', () => openAlerts(item), 'secondary wide'));
   if (item.note) body.append(node('p', 'note', `“${item.note}”`));
   if (item.observed_at) body.append(node('p', 'fine', `Price checked ${new Date(item.observed_at).toLocaleDateString()}. Confirm at the store.`));
   const actions = node('div', 'card-actions');
   const visit = node('a', '', 'View ↗'); visit.href = item.selected_url || item.url; visit.target = '_blank'; visit.rel = 'noopener noreferrer';
   actions.append(visit, action('Share ↗', () => share(item)), action('Edit', () => openEditor(item)), action('Remove', () => remove(item), 'delete'));
   body.append(actions);
-  const watchButton = action(watching ? 'Stop watching' : 'Resume watching', async () => {
+  const watchButton = action(watching ? 'Pause product alert' : 'Enable product alert', async () => {
     watchButton.disabled = true;
     try { await request('/api/items/' + item.id, { method: 'PATCH', body: JSON.stringify({ watch_enabled: !watching }) });
-      await load(); toast(watching ? 'Watching stopped. Product kept in your collection.' : 'Watching for a 20% drop.');
+      await load(); toast(watching ? 'Product alert paused. Variant alerts are unchanged.' : 'Product alert enabled.');
     } catch (error) { toast(error.message); watchButton.disabled = false; }
   }, 'subtle');
   const tools = node('div', 'product-tools'); tools.append(watchButton);
@@ -123,6 +112,104 @@ function card(item) {
     finally { retry.disabled = false; retry.textContent = 'Refresh details'; }
   }, 'subtle preview-retry');
   tools.append(retry); body.append(tools); article.append(body); return article;
+}
+
+function watchDescription(watch, currency) {
+  const state = watch.watch_enabled === 0 ? 'Paused' : watch.extraction_status === 'out_of_stock' ? 'Out of stock · waiting' : watch.extraction_status === 'verified' ? 'Watching' : 'Waiting for a verified price';
+  const baseline = watch.baseline_price != null ? ' · Starting price ' + money(watch.baseline_price, watch.currency || currency) : '';
+  const targets = [];
+  if (watch.baseline_price != null && watch.discount_percent != null) targets.push(money(Math.floor(watch.baseline_price * (100-watch.discount_percent) + 1e-8)/100, watch.currency || currency));
+  if (watch.target_price != null) targets.push(money(watch.target_price, watch.currency || currency));
+  return state + baseline + (targets.length ? ' · Alert at ' + targets.join(' or ') + ' or less' : '');
+}
+function percentField(value) {
+  const input = node('input'); input.type = 'number'; input.min = '1'; input.max = '90'; input.step = '1'; input.value = value ?? 20;
+  input.setAttribute('aria-label', 'Price drop percentage'); input.required = true; return input;
+}
+function targetField(value) {
+  const input = node('input'); input.type = 'number'; input.min = '0.01'; input.step = '0.01'; input.value = value ?? '';
+  input.setAttribute('aria-label', 'Target price (optional)'); return input;
+}
+function labelled(label, field) { const wrapper = node('label', '', label); wrapper.append(field); return wrapper; }
+function openAlerts(item) {
+  const dialog = $('#alerts-editor'); const content = $('#alerts-content'); content.replaceChildren();
+  $('#alerts-title').textContent = item.title;
+  const productForm = node('form', 'alert-section');
+  productForm.append(node('h3', '', 'Whole product'));
+  productForm.append(node('p', 'fine', 'Watch the lowest available offer on this saved product page. Any size or color listed here may qualify. Colors sold on separate pages may need their own saved link.'));
+  const enabled = node('input'); enabled.type = 'checkbox'; enabled.checked = item.watch_enabled !== 0;
+  productForm.append(labelled('Enable product alert', enabled));
+  const percent = percentField(item.discount_percent), target = targetField(item.target_price);
+  productForm.append(labelled('Price drop (%)', percent), labelled('Or target price (optional)', target), node('p', 'fine', watchDescription(item, item.currency)));
+  const save = node('button', 'secondary', 'Save product alert'); save.type = 'submit'; productForm.append(save);
+  productForm.addEventListener('submit', async event => {
+    event.preventDefault(); save.disabled = true;
+    try { await request('/api/items/' + item.id, {method:'PATCH', body:JSON.stringify({watch_enabled:enabled.checked, discount_percent:percent.value, target_price:target.value})}); await load(); openAlerts(items.find(i => i.id === item.id)); toast('Product alert updated.'); }
+    catch(error) { toast(error.message); } finally { save.disabled = false; }
+  });
+  content.append(productForm);
+  const watched = node('section', 'alert-section'); watched.append(node('h3', '', 'Specific variant alerts'));
+  watched.append(node('p', 'fine', 'Each exact combination has its own starting price and drop threshold. These alerts work independently of the whole-product alert.'));
+  for (const watch of item.variant_watches || []) {
+    const form = node('form', 'variant-watch');
+    form.append(node('h4', '', watch.variant_label || watch.variant_id));
+    form.append(node('p', 'fine', watchDescription(watch, item.currency)));
+    if (watch.price != null) form.append(node('p', '', 'Last price: ' + money(watch.price, watch.currency)));
+    const pct = percentField(watch.discount_percent), absolute = targetField(watch.target_price);
+    const toggle = node('input'); toggle.type = 'checkbox'; toggle.checked = watch.watch_enabled !== 0;
+    form.append(labelled('Enabled', toggle), labelled('Price drop (%)', pct), labelled('Or target price (optional)', absolute));
+    const update = node('button', 'secondary', 'Save variant alert'); update.type = 'submit'; form.append(update);
+    form.addEventListener('submit', async event => { event.preventDefault(); update.disabled = true;
+      try { await request('/api/items/' + item.id + '/watches/' + watch.id, { method:'PATCH', body:JSON.stringify({watch_enabled:toggle.checked, discount_percent:pct.value, target_price:absolute.value}) }); await load(); openAlerts(items.find(i => i.id === item.id)); toast('Variant alert updated.'); }
+      catch(error) { toast(error.message); update.disabled = false; }
+    });
+    form.append(action('Remove variant alert', async () => {
+      try { await request('/api/items/' + item.id + '/watches/' + watch.id,{method:'DELETE'}); await load(); openAlerts(items.find(i => i.id === item.id)); }
+      catch(error) { toast(error.message); }
+    }, 'subtle'));
+    watched.append(form);
+  }
+  content.append(watched);
+  const variants = JSON.parse(item.variants_json || '[]');
+  const add = node('form','alert-section'); add.append(node('h3','','Add a color / size alert'));
+  if (!variants.length) add.append(node('p','fine','Variant details are not available yet. Close this window and use Refresh details to check again.'));
+  else {
+    const dimensions = [...new Set(variants.flatMap(v => Object.keys(v.attributes || {})))];
+    if (!dimensions.some(k => /colou?r/i.test(k))) add.append(node('p','fine','Color/style: the product page you saved. Choose the size and any other options below.'));
+    const selectors = node('div'); const values = {}; let selectedId = '';
+    const summary = node('p','fine'); const percent = percentField(20), target = targetField();
+    const submit = node('button','primary wide','Add variant alert'); submit.type='submit'; submit.disabled=true;
+    const draw = () => {
+      selectors.replaceChildren(); let candidates = variants;
+      for (const [index,key] of dimensions.entries()) {
+        const select = node('select'); select.setAttribute('aria-label', key);
+        const placeholder=node('option','','Choose '+key.toLowerCase()); placeholder.value=''; select.append(placeholder);
+        for(const value of [...new Set(candidates.map(v => String(v.attributes?.[key] ?? 'Not specified')))]) { const option=node('option','',value); option.value=value; select.append(option); }
+        select.value=values[key] || ''; select.disabled=index>0 && !values[dimensions[index-1]];
+        select.addEventListener('change',()=> { values[key]=select.value; for(const later of dimensions.slice(index+1)) delete values[later]; draw(); });
+        selectors.append(labelled(key,select));
+        if(values[key]) candidates=candidates.filter(v => String(v.attributes?.[key] ?? 'Not specified')===values[key]);
+      }
+      selectedId=''; const complete=dimensions.every(key=>values[key]);
+      const show = v => { selectedId=v?.id || ''; submit.disabled=!v; summary.textContent=v ? v.label + (v.price != null && v.currency ? ' · '+money(v.price,v.currency) : '') + (v.available===false ? ' · Out of stock; we will wait for availability' : '') : 'Choose an exact combination to continue.'; };
+      if(complete && candidates.length===1) show(candidates[0]);
+      else {
+        show(null);
+        if(complete) {
+          const select=node('select'); select.setAttribute('aria-label','Exact variant');
+          const empty=node('option','','Choose exact variant'); empty.value=''; select.append(empty);
+          for(const v of candidates) { const option=node('option','',v.label+' · '+v.id); option.value=v.id;select.append(option); }
+          select.addEventListener('change',()=>show(candidates.find(v=>v.id===select.value)));selectors.append(labelled('Exact variant',select));
+        }
+      }
+    };
+    draw(); add.append(selectors,summary,labelled('Price drop (%)',percent),labelled('Or target price (optional)',target),submit);
+    add.addEventListener('submit',async event=> { event.preventDefault(); if(!selectedId)return; submit.disabled=true;
+      try { await request('/api/items/'+item.id+'/variant',{method:'POST',body:JSON.stringify({variant_id:selectedId,discount_percent:percent.value,target_price:target.value})}); await load();openAlerts(items.find(i=>i.id===item.id));toast('Exact variant alert added.'); }
+      catch(error) {toast(error.message);submit.disabled=false;}
+    });
+  }
+  content.append(add); if(!dialog.open)dialog.showModal();
 }
 
 function render() {
@@ -302,6 +389,7 @@ $('#complete-setup').addEventListener('click', async () => {
   try { await request('/api/saving-setup', { method: 'POST', body: '{}' }); $('#saving-onboarding').hidden = true; }
   catch (error) { toast(error.message); }
 });
+$('#close-alerts').addEventListener('click', () => $('#alerts-editor').close());
 $('#close-dialog').addEventListener('click', closeEditor);
 $('#refresh').addEventListener('click', load);
 $('#enable-push').addEventListener('click', enablePush);

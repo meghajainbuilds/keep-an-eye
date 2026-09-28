@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { cleanUrl, fetchProductResource } from '../lib/product.mjs';
+import { cleanUrl, fetchProductResource, MAX_PRODUCT_BYTES } from '../lib/product.mjs';
 
 // Every page request is fulfilled through the same DNS-pinned public-network fetcher.
 // Never pass app credentials, browser profiles, or collection data to this service.
@@ -18,7 +18,7 @@ export async function render(url, resource = fetchProductResource) {
       try {
         const result = await resource(cleanUrl(req.url()));
         total += result.body.length;
-        if (total > 8_000_000) return route.abort();
+        if (total > 16_000_000) return route.abort();
         await route.fulfill({ status: 200, contentType: result.contentType, body: result.body });
       } catch { await route.abort().catch(() => {}); }
     });
@@ -27,7 +27,7 @@ export async function render(url, resource = fetchProductResource) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15_000 });
     await page.waitForFunction(() => [...document.querySelectorAll('script[type="application/ld+json"]')].some(s => /"(?:price|offers)"/.test(s.textContent)), undefined, { timeout: 4000 }).catch(() => {});
     const html = await page.content();
-    if (Buffer.byteLength(html) > 2_000_000) throw Error('Rendered page too large');
+    if (Buffer.byteLength(html) > MAX_PRODUCT_BYTES) throw Error('Rendered page too large');
     return html;
   } finally { clearTimeout(deadline); await browser.close(); }
 }

@@ -15,3 +15,7 @@ Good next prompts for Codex:
 1. "Review the price extractor against three product pages I choose. Add fixture based tests. Explain any price ambiguity before changing logic."
 2. "Help me replace the single user store with accounts and a hosted database without weakening privacy."
 3. "Improve browse and search for a large saved collection, keeping the one tap save flow."
+
+## Resuming this project
+
+Read `PROJECT_CONTEXT.md` when resuming development. If `../private/SESSION_HANDOFF.md` exists, it is the owner's local record of the active branch, unpublished changes, deployment pointers and next step; read it before choosing a checkout. Keep that private directory outside Git. Check `git status` before edits and preserve all existing work. Update the private handoff at a milestone with tested versus deployed state.

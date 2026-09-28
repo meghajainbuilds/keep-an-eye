@@ -4,7 +4,7 @@ import dns from 'node:dns';
 import https from 'node:https';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
-import { fetchProductHtml, parseProduct } from '../lib/product.mjs';
+import { fetchProductHtml, parseProduct, MAX_PRODUCT_BYTES } from '../lib/product.mjs';
 
 const fixture = readFileSync(new URL('./fixtures/sample-product.html', import.meta.url), 'utf8');
 
@@ -40,7 +40,7 @@ test('fetch supports Node all-address lookup, larger product pages, redirects an
       }
       res.statusCode = 200; res.headers = { 'content-type': 'text/html' };
       onResponse(res);
-      res.emit('data', Buffer.from(fixture + ' '.repeat(tooLarge ? 2_000_001 : 730_000)));
+      res.emit('data', Buffer.from(fixture + ' '.repeat(tooLarge ? MAX_PRODUCT_BYTES + 1 : 2_100_000)));
       res.emit('end');
     });
     return req;

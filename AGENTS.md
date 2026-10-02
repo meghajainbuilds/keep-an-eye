@@ -5,6 +5,7 @@ Product promise: a fast, calm place to find saved products again by category and
 - Never invent a price or treat an AI response as a price observation.
 - Distinguish absolute targets from percentage drops. The percentage baseline is the first observed merchant price.
 - Preserve original merchant links and never add affiliate parameters.
+- Build extraction and preview fixes around shared failure patterns across websites, not one-off retailer patches. Resolve shared links, identify merchants, read metadata, and handle blocked pages through reusable mechanisms. Do not hard-code retailer names, product URLs, image paths, or product details to repair an individual save. Validate shared behavior with synthetic fixtures spanning multiple domains and preserve conservative price, currency, and variant checks. Broad applicability does not imply every website is readable.
 - Let people correct automatic categories. Keep manual overrides on restart.
 - Never claim a phone alert was displayed when a push service has only accepted it.
 - Keep credentials on the server. Do not commit `.env` or `data/`.

@@ -21,3 +21,5 @@ dialog select{border:1px solid #d9ded4;background:#fff;color:#253f34;border-radi
 .alert-section {border-top:1px solid var(--line, #ddd);padding:1.2rem 0;margin-top:1rem}.variant-watch {background:#f2f3ed;padding:1rem;margin:1rem 0}.alert-section label {display:block;margin:.7rem 0}.alert-section label input[type="checkbox"] {width:auto;margin-left:.8rem}.alert-section input,.alert-section select {max-width:100%;box-sizing:border-box}.variant-watch h4{margin:0 0 .5rem}.alert-section button{margin-top:.6rem}
 
 #alerts-editor{max-width:620px;padding:24px}#alerts-editor .alert-section{padding:1.2rem 0}#alerts-editor .fine{font-size:13px!important;line-height:1.6}#alerts-editor h2{overflow-wrap:anywhere}#alerts-editor .variant-watch{padding:16px}
+
+#browser-preview-review{overflow-wrap:anywhere}#browser-preview-confirmation input{width:auto;margin-right:8px}#browser-preview ol{padding-left:22px;font-size:13px;line-height:1.6}#browser-preview h2{font-size:24px}#browser-preview details{margin:18px 0}

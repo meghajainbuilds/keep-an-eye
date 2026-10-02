@@ -43,6 +43,16 @@
     <footer><span>GOOD TASTE TAKES TIME.</span><span>A little project for shopping with intention.</span></footer>
   </div>
 
+  <dialog id="browser-preview" aria-labelledby="browser-preview-heading"><form id="browser-preview-form">
+    <div class="dialog-head"><h2 id="browser-preview-heading">Import browser preview</h2><button type="button" class="close" id="close-browser-preview" aria-label="Close browser preview">×</button></div>
+    <p>Repair the preview for <strong id="browser-preview-item"></strong> using a product page you can open.</p>
+    <ol><li>Save the helper below as a browser bookmark: create a bookmark, then replace its address with the copied code.</li><li>Open your saved product link, choose the intended color, and run that bookmark. Copy the details it shows.</li><li>Paste below and review before saving.</li></ol>
+    <details><summary>Set up the preview bookmark</summary><p>The helper reads the page address, name, description and image. It sends nothing and does not read your account or payment details.</p><button type="button" class="secondary" id="copy-preview-bookmark">Copy bookmark code</button><label for="preview-bookmark-code">Bookmark address</label><textarea id="preview-bookmark-code" readonly rows="3"></textarea></details>
+    <label for="browser-preview-data">Copied product details</label><textarea id="browser-preview-data" maxlength="10000" rows="4" required></textarea><button type="button" class="secondary" id="review-browser-preview">Review preview</button>
+    <div id="browser-preview-review"></div><label id="browser-preview-confirmation" hidden><input type="checkbox" id="browser-preview-confirm"> This is the same product and intended color as my saved link.</label>
+    <p class="fine">Your original link, custom name, notes and alert settings stay saved. This imports a preview only; it does not verify a price or enable access for daily checks.</p>
+    <p id="browser-preview-error" class="error" role="alert"></p><button id="browser-preview-save" class="primary wide" type="submit" disabled>Save browser preview</button>
+  </form></dialog>
   <dialog id="alerts-editor" aria-labelledby="alerts-title"><div class="dialog-head"><span class="eyebrow">PRICE ALERTS</span><button type="button" id="close-alerts" class="close" aria-label="Close price alerts">×</button></div><h2 id="alerts-title"></h2><div id="alerts-content"></div></dialog>
   <dialog id="editor"><form method="dialog" id="editor-form"><div class="dialog-head"><span class="eyebrow" id="dialog-label">A NEW FIND</span><button type="button" id="close-dialog" class="close" aria-label="Close">×</button></div><h2 id="dialog-title">Keep it in mind.</h2><p class="dialog-copy">Save a link now. We’ll sort it into your collection automatically, and you can correct the category later.</p><label for="product-url">Product link</label><input id="product-url" type="url" placeholder="https://store.com/product" required><label for="product-title">Name <span>(optional)</span></label><input id="product-title" maxlength="180" placeholder="We’ll try to find it for you"><label for="product-note">Your note <span>(optional)</span></label><textarea id="product-note" maxlength="500" rows="2" placeholder="Why did it catch your eye?"></textarea><div id="category-editor" hidden><label for="product-category">Category</label><select id="product-category"></select><label for="product-subcategory">Subcategory</label><select id="product-subcategory"></select><p class="fine">Correct the automatic category when it misses something.</p></div><label class="watch-toggle"><input id="product-watch" type="checkbox" checked> Enable whole-product price alerts</label><p class="fine">New products start at a 20% drop. Use Price alerts on the product card to change the threshold or add exact color and size alerts.</p><div id="form-error" class="error" role="alert"></div><button class="primary wide" type="submit" id="save-button">Save this find ↗</button></form></dialog>
   <dialog id="settings" aria-labelledby="settings-heading"><div class="shortcut-content"><div class="dialog-head"><h2 id="settings-heading">Settings</h2><button class="close" id="close-settings" aria-label="Close settings">×</button></div><section class="saving-settings"><h3>Saving from websites</h3><p>Your iPhone Shortcut lets you save while shopping. Manage its connection or view setup instructions here.</p><button class="secondary" id="open-shortcut">Manage iPhone saving</button></section>      <section class="alert-settings" aria-label="Phone price alerts">
@@ -76,6 +86,6 @@
     </div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=variant-watches-5"></script>
+  <script type="module" src="/app.js?v=browser-preview-6"></script>
 </body>
 </html>

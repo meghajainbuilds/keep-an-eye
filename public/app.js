@@ -1,3 +1,5 @@
+import { previewBookmark } from './browser-preview.js';
+
 const $ = selector => document.querySelector(selector);
 const app = $('#app');
 const loginView = $('#login-view');
@@ -56,7 +58,7 @@ function card(item) {
   } else missingPreview();
   article.append(visual);
   const body = node('div', 'card-body');
-  body.append(node('div', 'merchant', new URL(item.url).hostname.replace(/^www\./, '')));
+  body.append(node('div', 'merchant', new URL(item.merchant_url || item.url).hostname.replace(/^www\./, '')));
   body.append(node('div', 'category-tag', `${item.category || 'Other'} · ${item.subcategory || 'Other'}`));
   const heading = node('h3');
   const titleLink = node('a', 'product-link', item.title);
@@ -111,7 +113,9 @@ function card(item) {
     } catch (error) { toast(error.message); }
     finally { retry.disabled = false; retry.textContent = 'Refresh details'; }
   }, 'subtle preview-retry');
-  tools.append(retry); body.append(tools); article.append(body); return article;
+  tools.append(retry, action('Import browser preview', () => openBrowserPreview(item), 'subtle'));
+  if (item.preview_source === 'browser') body.append(node('p', 'fine', 'Preview includes browser-imported details. Price checks run separately.'));
+  body.append(tools); article.append(body); return article;
 }
 
 function watchDescription(watch, currency) {
@@ -232,7 +236,7 @@ function render() {
     (category === 'All' || i.category === category) &&
     (subcategory === 'All' || i.subcategory === subcategory) &&
     (filter === 'all' || filter === 'drops' && i.price != null && i.baseline_price != null && i.price < i.baseline_price || filter === 'unpriced' && (i.price == null || i.extraction_status !== 'verified')) &&
-    (!search || [i.title, i.description, i.note, i.url].some(value => String(value || '').toLocaleLowerCase().includes(search))));
+    (!search || [i.title, i.description, i.note, i.url, i.merchant_url].some(value => String(value || '').toLocaleLowerCase().includes(search))));
   const counts = { all: items.length, drops: items.filter(i => i.price != null && i.baseline_price != null && i.price < i.baseline_price).length, unpriced: items.filter(i => i.price == null || i.extraction_status !== 'verified').length };
   const labels = { all: 'All saved', drops: 'Price drops', unpriced: 'Waiting for price' };
   document.querySelectorAll('.status-filters .filter').forEach(button => {
@@ -465,3 +469,53 @@ async function copySetup(value) {
 $('#copy-shortcut-key').addEventListener('click', () => copySetup('Bearer ' + $('#shortcut-key').value));
 $('#copy-shortcut-endpoint').addEventListener('click', () => copySetup(location.origin + '/api/capture'));
 load();
+
+let previewItem, reviewedPreview;
+function openBrowserPreview(item) {
+  previewItem = item; reviewedPreview = null;
+  $('#browser-preview-form').reset();
+  $('#browser-preview-error').textContent = '';
+  $('#browser-preview-review').replaceChildren();
+  $('#browser-preview-confirmation').hidden = true;
+  $('#browser-preview-save').disabled = true;
+  $('#preview-bookmark-code').value = previewBookmark;
+  $('#browser-preview-item').textContent = item.title;
+  $('#browser-preview').showModal();
+}
+$('#close-browser-preview').addEventListener('click', () => $('#browser-preview').close());
+$('#copy-preview-bookmark').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(previewBookmark); toast('Bookmark code copied.'); }
+  catch { $('#preview-bookmark-code').select(); toast('Select and copy the bookmark code.'); }
+});
+function clearPreviewReview() {
+  reviewedPreview = null; $('#browser-preview-review').replaceChildren();
+  $('#browser-preview-confirmation').hidden = true; $('#browser-preview-confirm').checked = false;
+  $('#browser-preview-save').disabled = true;
+}
+$('#browser-preview-data').addEventListener('input', clearPreviewReview);
+$('#review-browser-preview').addEventListener('click', () => {
+  clearPreviewReview(); $('#browser-preview-error').textContent = '';
+  try {
+    const input = JSON.parse($('#browser-preview-data').value);
+    if (input.version !== 1 || typeof input.title !== 'string' || !input.title.trim()) throw Error('Paste the details copied by the preview bookmark.');
+    const url = new URL(input.url);
+    if (url.protocol !== 'https:' || url.username || url.password) throw Error('Use details from a public HTTPS product page.');
+    // Explicit field selection; imported prices and instructions have no effect.
+    reviewedPreview = {version:1,url:url.href,title:input.title.slice(0,180),description:typeof input.description === 'string' ? input.description.slice(0,500) : '',image:typeof input.image === 'string' ? input.image : ''};
+    const review = $('#browser-preview-review');
+    review.append(node('h3','',reviewedPreview.title), node('p','',url.hostname), node('p','fine',url.href), node('p','',reviewedPreview.description));
+    // Image is loaded only after server validation on save, not from arbitrary pasted data.
+    if (reviewedPreview.image) review.append(node('p','fine','Image link: ' + reviewedPreview.image));
+    $('#browser-preview-confirmation').hidden = false;
+  } catch (error) { reviewedPreview = null; $('#browser-preview-error').textContent = error.message; }
+});
+$('#browser-preview-confirm').addEventListener('change', () => { $('#browser-preview-save').disabled = !reviewedPreview || !$('#browser-preview-confirm').checked; });
+$('#browser-preview-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!reviewedPreview || !$('#browser-preview-confirm').checked) return;
+  $('#browser-preview-save').disabled = true;
+  try {
+    const result = await request('/api/items/' + previewItem.id + '/browser-preview', {method:'POST',body:JSON.stringify({...reviewedPreview,confirm_match:true})});
+    $('#browser-preview').close(); await load(); toast(result.message);
+  } catch (error) { $('#browser-preview-error').textContent = error.message; $('#browser-preview-save').disabled = false; }
+});

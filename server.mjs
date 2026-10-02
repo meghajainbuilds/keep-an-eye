@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createHmac, timingSafeEqual, randomBytes, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createStore } from './lib/store.mjs';
+import { browserPreviewPatch } from './lib/browser-preview.mjs';
 import { cleanUrl } from './lib/product.mjs';
 import { checkPrices } from './lib/alerts.mjs';
 import { createEnrichmentQueue } from './lib/enrichment.mjs';
@@ -74,6 +75,7 @@ function discount(value) {
 }
 const staticFiles = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
+  ['/browser-preview.js', ['browser-preview.js', 'text/javascript; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
   ['/manifest.webmanifest', ['manifest.webmanifest', 'application/manifest+json']],
@@ -238,6 +240,17 @@ export const server = http.createServer(async (req, res) => {
           if (input.watch_enabled === true) enrichment.enqueue(watch.item_id);
           return json(res, 200, { watch: updated });
         }
+      }
+      const browserMatch = /^\/api\/items\/([\w-]+)\/browser-preview$/.exec(path);
+      if (browserMatch && req.method === 'POST') {
+        const item = store.get(browserMatch[1]);
+        if (!item) return json(res, 404, { error: 'Item not found.' });
+        const patch = await browserPreviewPatch(item, await body(req));
+        const latest = store.get(item.id);
+        if (!latest) return json(res, 404, { error: 'Item not found.' });
+        if (latest.title !== item.title) delete patch.title;
+        if (latest.category_source !== item.category_source || latest.category !== item.category || latest.subcategory !== item.subcategory) { delete patch.category; delete patch.subcategory; }
+        return json(res, 200, { item: store.update(item.id, patch), message: 'Browser preview saved. Automatic price checks still need access to the store.' });
       }
       const match = /^\/api\/items\/([\w-]+)$/.exec(path);
       if (match && req.method === 'PATCH') {

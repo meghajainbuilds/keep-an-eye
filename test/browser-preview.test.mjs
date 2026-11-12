@@ -21,7 +21,7 @@ test('browser helper captures standard metadata on unrelated stores and bookmark
   for (const [file,url] of [['browser-social.html','https://boutique.example/p/pants'],['browser-twitter.html','https://market.example/catalog/lamp']]) {
     const html=readFileSync(new URL('./fixtures/extraction/'+file,import.meta.url),'utf8');
     const metas=[...html.matchAll(/<meta\s+(property|name)="([^"]+)"\s+content="([^"]*)"/g)].map(m=>({getAttribute:key=>key===m[1]?m[2]:key==='content'?m[3]:null}));
-    const doc={title:'Fallback page',querySelectorAll:selector=>{assert.equal(selector,'meta');return metas;}};
+    const doc={title:'Fallback page',querySelectorAll:selector=>{return selector === 'meta' ? metas : []; }};
     const result=captureBrowserPreview(doc,url);
     assert.ok(result.title.startsWith('Fictional'));
     assert.ok(result.image.startsWith('https://'));

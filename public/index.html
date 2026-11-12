@@ -7,14 +7,14 @@
   <meta name="description" content="A quieter place to keep the things that caught your eye.">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/style.css?v=variant-watches-5">
+  <link rel="stylesheet" href="/style.css?v=notifications-8">
   <title>Keep an Eye · A considered shopping list</title>
 </head>
 <body>
   <div class="shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="Keep an Eye home"><span class="brandmark">◉</span><span>keep an eye<span class="period">.</span></span></a>
-      <div class="topbar-actions"><button class="text-button" id="open-settings" hidden>Settings</button><button class="text-button" id="logout" hidden>Sign out</button></div>
+      <div class="topbar-actions"><button class="text-button" id="open-notifications" hidden>Notifications</button><button class="text-button" id="open-settings" hidden>Settings</button><button class="text-button" id="logout" hidden>Sign out</button></div>
     </header>
 
     <main id="app" hidden>
@@ -43,6 +43,7 @@
     <footer><span>GOOD TASTE TAKES TIME.</span><span>A little project for shopping with intention.</span></footer>
   </div>
 
+  <dialog id="notification-inbox" aria-labelledby="notification-heading"><div class="shortcut-content"><div class="dialog-head"><h2 id="notification-heading">Notifications</h2><button class="close" id="close-notifications" aria-label="Close notifications">×</button></div><button class="subtle" id="read-notifications">Mark all as read</button><div id="notification-list"></div></div></dialog>
   <dialog id="browser-preview" aria-labelledby="browser-preview-heading"><form id="browser-preview-form">
     <div class="dialog-head"><h2 id="browser-preview-heading">Import browser preview</h2><button type="button" class="close" id="close-browser-preview" aria-label="Close browser preview">×</button></div>
     <p>Repair the preview for <strong id="browser-preview-item"></strong> using a product page you can open.</p>
@@ -66,8 +67,8 @@
       <p>Product page → Share → <strong>Save to Keep an Eye</strong>. Your link goes straight into your collection. No form, no app switch.</p>
       <p class="dialog-copy">Set this up once on your iPhone using Apple’s Shortcuts app. Keep this guide open while you build it. Your phone may ask permission to connect the first time.</p>
       <ol class="shortcut-steps">
-        <li><strong>Create the Shortcut.</strong> Open Shortcuts, tap +, and name it <strong>Save to Keep an Eye</strong>. In Details, enable <strong>Show in Share Sheet</strong>. Accept <strong>URLs</strong> and <strong>Safari web pages</strong>.</li>
-        <li><strong>Get the product link.</strong> Add <strong>Get URLs from Input</strong>, using <strong>Shortcut Input</strong>. Keep only URLs beginning with <strong>https://</strong> or <strong>http://</strong>, then use <strong>Get Item from List → First Item</strong> on that filtered list. Google shares may include a <strong>source:</strong> entry; skip it. Stop with a message if no website URL remains.</li>
+        <li><strong>Create the Shortcut.</strong> Open Shortcuts, tap +, and name it <strong>Save to Keep an Eye</strong>. In Details, enable <strong>Show in Share Sheet</strong>. Accept <strong>URLs</strong>, <strong>Text</strong>, and <strong>Safari web pages</strong>.</li>
+        <li><strong>Get the product link.</strong> Add <strong>Get URLs from Input</strong>, using <strong>Shortcut Input</strong>. Keep only URLs beginning with <strong>https://</strong> or <strong>http://</strong>, then remove duplicate links. If more than one remains, use <strong>Choose from List</strong> so you select the product to save; otherwise use the only remaining URL. Google shares may include a <strong>source:</strong> entry; skip it. Stop with a message if no website URL remains.</li>
         <li><strong>Connect your collection.</strong> Create a private saving key below. It can add links, but cannot read or delete your finds.
           <p id="shortcut-key-status" role="status"></p>
           <button class="secondary" id="create-shortcut-key" type="button">Create saving key</button>
@@ -76,16 +77,17 @@
         </li>
         <li><strong>Send the link.</strong> Add <strong>Get Contents of URL</strong> and enter this address:
           <code id="shortcut-endpoint"></code><button class="subtle" id="copy-shortcut-endpoint" type="button">Copy address</button>
-          <details><summary>Show the connection settings</summary><p>Method: <strong>POST</strong></p><p>Headers: add <strong>Authorization</strong>, then paste the copied authorization header as its value.</p><p>Request Body: <strong>JSON</strong>. Add a <strong>Text</strong> field named <strong>url</strong>. For its value, choose the <strong>Item from List</strong> variable from step 2, not typed text.</p></details>
+          <details><summary>Show the connection settings</summary><p>Method: <strong>POST</strong></p><p>Headers: add <strong>Authorization</strong>, then paste the copied authorization header as its value.</p><p>Request Body: <strong>JSON</strong>. Add a <strong>Text</strong> field named <strong>url</strong>. For its value, choose the selected URL variable from step 2, not typed text.</p></details>
         </li>
         <li><strong>Show the result.</strong> Add <strong>Get Dictionary Value</strong> for key <strong>message</strong> in <strong>Contents of URL</strong>. Add <strong>Show Result</strong> using that Dictionary Value. Tap Done.</li>
       </ol>
+      <details><summary>Also save photos and descriptions from Safari</summary><p>For stores that block automatic details, open the product in Safari and share from there. Add this branch to your Shortcut:</p><ol><li>Use <strong>Get Type</strong> on Shortcut Input, then <strong>If</strong> the type is <strong>Safari web page</strong>.</li><li>Inside that branch, add <strong>Run JavaScript on Web Page</strong> with Shortcut Input. Replace its example script with the copied code below.</li><li>Send <strong>Get Contents of URL</strong> to the same saving address with the same Authorization header. Use a JSON Text field named <strong>capture</strong> whose value is the JavaScript Result. No <code>url</code> field is needed in this branch.</li><li>Otherwise, use the ordinary link-saving steps above. Both branches finish with <strong>Get Dictionary Value → message</strong> and <strong>Show Result</strong>.</li></ol><button class="secondary" id="copy-safari-capture" type="button">Copy Safari capture code</button><p>This reads product photos and descriptions from the page you shared. Prices are verified separately against the store; copied text never triggers an alert. Apps that share only a link use the ordinary save flow. Existing saves keep their details; use Import browser preview on the saved card to repair one.</p></details>
       <div class="shortcut-try"><strong>Try it on a product you like.</strong><p>Open a product page in Safari or Chrome → Share → Save to Keep an Eye. Wait for “Saved to Keep an Eye.” If it is already saved, we’ll tell you. Blocked stores still save as links.</p></div>
       <p class="fine">This sets up saving only. Every saved product is automatically watched for a 20% price drop. Enable phone notifications in Settings to receive alerts.</p>
       <p id="shortcut-error" class="error" role="alert"></p>
     </div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=browser-preview-6"></script>
+  <script type="module" src="/app.js?v=notifications-8"></script>
 </body>
 </html>

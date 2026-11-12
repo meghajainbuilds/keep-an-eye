@@ -35,10 +35,10 @@ The primary flow is **product page → Share → Save to Keep an Eye → saved**
 
 Sign in and open **Settings → Manage iPhone saving** for the complete guide and your private saving key. In Apple Shortcuts:
 
-1. Create **Save to Keep an Eye** and enable **Show in Share Sheet**, accepting URLs and Safari web pages.
-2. Add **Get URLs from Input** with Shortcut Input. Keep only URLs beginning with `https://` or `http://`, then select **First Item** from the filtered results. Google shares can contain `source:` text that must not be selected as the product link. Stop with a message if no website URL remains.
+1. Create **Save to Keep an Eye** and enable **Show in Share Sheet**, accepting URLs, Text and Safari web pages.
+2. Add **Get URLs from Input** with Shortcut Input. Keep only URLs beginning with `https://` or `http://`, remove duplicates, and use **Choose from List** if more than one URL remains. Otherwise use the single URL. Google shares can contain `source:` text that must not be selected as the product link. Stop with a message if no website URL remains.
 3. In the app, create a saving key and copy its authorization header.
-4. Add **Get Contents of URL**, using the address displayed in the app (`https://YOUR-APP/api/capture`). Set Method to POST. Add the Authorization header using the copied value (`Bearer YOUR_KEY`). Set Request Body to JSON; add a Text field named `url`, using the Item from List variable.
+4. Add **Get Contents of URL**, using the address displayed in the app (`https://YOUR-APP/api/capture`). Set Method to POST. Add the Authorization header using the copied value (`Bearer YOUR_KEY`). Set Request Body to JSON; add a Text field named `url`, using the selected URL variable.
 5. Add **Get Dictionary Value → message** from Contents of URL, then **Show Result** with that value.
 6. On a product page in Safari or Chrome, use Share → Save to Keep an Eye. Grant the requested connection permission on first use. The Shortcut displays the server result without opening the app or asking you to complete a form.
 
@@ -134,3 +134,22 @@ Imports repair the product preview and merchant label while retaining the origin
 Browser imports never create a price observation, change a baseline or variant, or send a notification. A later blocked refresh preserves imported images and descriptions. Daily price checks still require readable merchant evidence; browser import does not fix an unavailable renderer or overcome server-side blocking. Imported images may still fail if the merchant disallows image display outside its site.
 
 Extraction fixes must address shared formats or failure patterns. JSON-LD, Open Graph, Twitter metadata and the same-origin Shopify platform API are reusable capabilities, not retailer allowlists. Synthetic tests cover multiple unrelated domains, rejected imports, redirects ending in access denial, persistence and unchanged price/watch state. No saved-product URLs or captures belong in fixtures.
+
+
+## Discount notifications and scheduled jobs
+
+Verified discounts of 20% from the first recorded price or a corroborated merchant regular price qualify by default. Generic structured `ListPrice`/`StrikethroughPrice` and matching commerce `compare_at_price` data are supported; membership, coupons and ambiguous prices are not assumed. Custom per-watch targets still apply. The collection shows a simple **On sale** pill for a currently verified discount of at least 20%, including a qualifying exact variant. Unavailable observations do not show a current sale pill.
+
+Notifications appear at the top of the app and persist independently of phone delivery. The Home Screen badge counts unread notifications; opening a notification or marking it read synchronizes the count when the app is open. On iPhone, add the app to the Home Screen, enable alerts once, then manage alerts, sounds and badges in iOS Settings → Notifications. Focus and OS delivery policies still apply. Accepted pushes are not proof of display on a phone.
+
+POST `/api/check-prices` with the existing scheduler bearer secret now returns **202 Accepted** promptly with a job ID. This means the durable job was accepted, **not** that checking completed. Concurrent triggers join the active job. GET the same endpoint with the same secret to inspect `state`, `cursor`, `total`, `checked`, `unavailable`, `alerted` and `errors`. A persistent cursor resumes unfinished products after restart. Keep one application replica sharing this SQLite volume. Each product observation has a 60-second deadline; completion and failure status are stored privately. The existing daily scheduler can use this endpoint unchanged; monitoring should inspect job completion separately.
+
+Inbox events deduplicate a discount episode. Phone deliveries remember accepted endpoints and retry temporary failures in the background (15-minute backoff, at most eight attempts, up to 24 hours), even without a fresh price check. Expired subscriptions are removed; opening the installed app repairs its server subscription registration. Backend records stay out of the user-facing collection. A rare crash between remote push acceptance and the local delivery write can cause a repeated push; stable notification tags replace the same visible alert.
+
+### Sharing from shopping apps
+
+The saving endpoint accepts a single URL or text containing one unique HTTP(S) link. Multiple links require selection. Original links, tracking and variant parameters are preserved; duplicate shares do not overwrite notes or reactivate watches. Optional `title`, `description` and public HTTPS `image` URL fields save previews for a new item; submitted prices are never treated as merchant observations. A failed optional preview import still saves the link. Raw photo attachments are not supported.
+
+The Safari browser-preview helper also reads standard Product/ProductGroup JSON-LD for photos and descriptions. This is a manual fallback for stores that block the server. It does not bypass access restrictions, import verified prices or establish automatic monitoring for inaccessible pages. The web manifest offers URL/text sharing where supported; iPhone users continue to use the Shortcut. Actual native-app share payloads and phone notification display require testing on the owner's iPhone before claiming end-to-end support.
+
+For a richer Safari share, Settings → Manage iPhone saving includes a copyable script for **Run JavaScript on Web Page**. The script returns a versioned product-preview JSON string; POST it as the `capture` field using the same save-only credential. The server derives the selected page URL from that capture and accepts only preview fields, never its supplied price or watch settings. Non-Safari app shares continue through the ordinary URL/text branch. Apple may require enabling script execution in Shortcuts settings and granting access on the product page.

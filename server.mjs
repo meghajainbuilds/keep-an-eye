@@ -6,8 +6,8 @@ import { createHmac, timingSafeEqual, randomBytes, createHash } from 'node:crypt
 import { fileURLToPath } from 'node:url';
 import { createStore } from './lib/store.mjs';
 import { browserPreviewPatch } from './lib/browser-preview.mjs';
-import { cleanUrl } from './lib/product.mjs';
-import { checkPrices } from './lib/alerts.mjs';
+import { createPriceJobs, createPushRetries } from './lib/price-jobs.mjs';
+import { sharedUrl } from './lib/shared-input.mjs';
 import { createEnrichmentQueue } from './lib/enrichment.mjs';
 import { askShoppingAssistant } from './lib/assistant.mjs';
 import { CATEGORIES, categorizeProduct, guessCategory, validCategory } from './lib/categories.mjs';
@@ -83,14 +83,15 @@ const staticFiles = new Map([
   ['/icon.svg', ['icon.svg', 'image/svg+xml']]
 ]);
 
+const notify = pushReady ? args => sendPushAlert(store, { ...args,
+  publicKey: pushPublicKey, privateKey: pushPrivateKey, subject: pushSubject }) : null;
+const jobs = createPriceJobs(store, { notify });
+const pushRetries = createPushRetries(store, notify);
 const enrichment = createEnrichmentQueue(store, {
-  classify: item => categorizeProduct(item, process.env.OPENAI_API_KEY, process.env.OPENAI_CATEGORIZATION_MODEL),
-  notify: pushReady ? ({ item, price }) => sendPushAlert(store, {
-    item, price, publicKey: pushPublicKey, privateKey: pushPrivateKey, subject: pushSubject
-  }) : null
+  classify: item => categorizeProduct(item, process.env.OPENAI_API_KEY, process.env.OPENAI_CATEGORIZATION_MODEL), notify
 });
 async function saveFind(input) {
-  const url = cleanUrl(input.url);
+  const url = sharedUrl(input.url);
   const existing = store.byUrl(url);
   if (existing) return { item: existing, existing: true };
   const title = safeText(input.title, 180) || new URL(url).hostname;
@@ -98,8 +99,16 @@ async function saveFind(input) {
   const item = store.add({ url, title, note, ...guessCategory({ url, title, note }), extraction_status: 'pending',
     watch_enabled: input.watch_enabled !== false,
     target_price: target(input.target_price), discount_percent: discount(input.discount_percent) ?? 20 });
+  let warning = null;
+  if (input.description || input.image) {
+    try {
+      const patch = await browserPreviewPatch(item, {version:1,confirm_match:true,url,title,
+        description:input.description,image:input.image});
+      store.update(item.id, {...patch,preview_source:'shared'});
+    } catch { warning = 'Your link is saved. Some shared details could not be imported.'; }
+  }
   enrichment.enqueue(item.id);
-  return { item, warning: null };
+  return { item: store.get(item.id), warning };
 }
 
 export const server = http.createServer(async (req, res) => {
@@ -112,16 +121,23 @@ export const server = http.createServer(async (req, res) => {
         return json(res, 401, { error: 'Shortcut key is missing or disabled. Open Keep an Eye to set it up again.' });
       if (!sameOrigin(req)) return json(res, 403, { error: 'Invalid origin.' });
       const input = await body(req);
+      let shared = {};
+      if (input?.capture != null) {
+        try { shared = typeof input.capture === 'string' ? JSON.parse(input.capture) : input.capture;
+          if (!shared || shared.version !== 1) throw Error();
+        } catch { return json(res, 400, {error:'Invalid Safari product capture. Share the link again.'}); }
+      }
       // Save-only access: no notes, watch mutations, or collection data returned.
       let url;
-      try { url = cleanUrl(input?.url); }
+      try { url = sharedUrl(input?.url || input?.text || shared.url); }
       catch (error) {
         store.setSetting('capture_diagnostic', JSON.stringify({
           at: new Date().toISOString(), status: 'rejected', ...captureDiagnostic(input?.url)
         }));
-        return json(res, 400, { error: 'This shared link could not be read. A diagnostic has been recorded in Keep an Eye; no Shortcut changes are needed.' });
+        return json(res, 400, { error: 'Share one product link. If several links were shared, choose the product you want to save.' });
       }
-      const result = await saveFind({ url });
+      if (shared.url && sharedUrl(shared.url) !== url) return json(res, 400, {error:'Choose the same product link as the Safari capture.'});
+      const result = await saveFind({ url, title: shared.title || input.title, description: shared.description || input.description, image: shared.image || input.image });
       store.setSetting('capture_diagnostic', JSON.stringify({ at: new Date().toISOString(), status: 'accepted', ...captureDiagnostic(input?.url) }));
       store.setSetting('saving_setup_complete', '1');
       return json(res, result.existing ? 200 : 201, {
@@ -129,11 +145,12 @@ export const server = http.createServer(async (req, res) => {
           result.warning ? 'Saved to Keep an Eye. Product details were unavailable; you can edit them later.' : 'Saved to Keep an Eye.'
       });
     }
-    if (req.method === 'POST' && path === '/api/check-prices') {
+    if (['POST', 'GET'].includes(req.method) && path === '/api/check-prices') {
       if (!cronSecret || !equal(req.headers.authorization || '', `Bearer ${cronSecret}`)) return json(res, 401, { error: 'Unauthorized.' });
-      const result = await checkPrices(store, { notify: pushReady ? ({ item, price }) =>
-        sendPushAlert(store, { item, price, publicKey: pushPublicKey, privateKey: pushPrivateKey, subject: pushSubject }) : null });
-      return json(res, 200, result);
+      const job = req.method === 'POST' ? jobs.start() : jobs.status();
+      if (!job) return json(res, 200, { job: null });
+      const { ids, ...summary } = job;
+      return json(res, req.method === 'POST' ? 202 : 200, { ...summary, total: ids.length });
     }
     if (req.method === 'POST' && path === '/api/login') {
       if (!sameOrigin(req)) return json(res, 403, { error: 'Invalid origin.' });
@@ -197,6 +214,14 @@ export const server = http.createServer(async (req, res) => {
         if (typeof input.endpoint !== 'string') return json(res, 400, { error: 'Invalid phone subscription.' });
         store.removeSubscription(input.endpoint);
         return json(res, 200, { ok: true });
+      }
+      if (req.method === 'GET' && path === '/api/notifications') return json(res, 200, { notifications: store.notifications(), unreadCount: store.unreadCount() });
+      if (req.method === 'POST' && path === '/api/notifications/read') {
+        const input = await body(req);
+        if (input.all === true) { store.markAllRead(); return json(res, 200, { unreadCount: store.unreadCount() }); }
+        if (!Array.isArray(input.ids) || input.ids.length > 100 || input.ids.some(id => typeof id !== 'string')) return json(res, 400, { error: 'Invalid notifications.' });
+        store.markRead(input.ids);
+        return json(res, 200, { unreadCount: store.unreadCount() });
       }
       if (req.method === 'GET' && path === '/api/items') return json(res, 200, { items: store.list() });
       if (req.method === 'POST' && path === '/api/items') {
@@ -295,7 +320,7 @@ export const server = http.createServer(async (req, res) => {
   }
 });
 
-server.on('close', () => enrichment.stop());
+server.on('close', () => { enrichment.stop(); jobs.stop(); pushRetries.stop(); });
 
 if (process.env.NODE_ENV !== 'test') {
   server.listen(Number(process.env.PORT) || 3000, () => console.log(`Keep an Eye running on http://localhost:${server.address().port}`));

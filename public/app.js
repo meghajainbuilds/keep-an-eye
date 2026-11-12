@@ -1,4 +1,4 @@
-import { previewBookmark } from './browser-preview.js';
+import { previewBookmark, shortcutCaptureScript } from './browser-preview.js';
 
 const $ = selector => document.querySelector(selector);
 const app = $('#app');
@@ -11,6 +11,9 @@ let category = 'All';
 let subcategory = 'All';
 let config = {};
 let refreshTimer;
+let notifications = [];
+const onSale = item => item.extraction_status === 'verified' && item.price > 0 && Math.max(item.baseline_price || 0, item.regular_price || 0) >= item.price / 0.8;
+const productOnSale = item => onSale(item) || (item.variant_watches || []).some(onSale);
 
 async function request(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', ...options.headers } });
@@ -23,8 +26,8 @@ async function request(path, options = {}) {
   return data;
 }
 
-function showLogin() { clearShortcutKey(); $('#shortcut-setup').close(); app.hidden = true; loginView.hidden = false; $('#logout').hidden = true; $('#open-settings').hidden = true; $('#settings').close(); $('#alerts-editor').close(); }
-function showApp() { app.hidden = false; loginView.hidden = true; $('#logout').hidden = false; $('#open-settings').hidden = false; }
+function showLogin() { clearTimeout(refreshTimer); notifications = []; $('#notification-list').replaceChildren(); $('#notification-inbox').close(); $('#open-notifications').hidden = true; clearShortcutKey(); $('#shortcut-setup').close(); app.hidden = true; loginView.hidden = false; $('#logout').hidden = true; $('#open-settings').hidden = true; $('#settings').close(); $('#alerts-editor').close(); }
+function showApp() { $('#open-notifications').hidden = false; app.hidden = false; loginView.hidden = true; $('#logout').hidden = false; $('#open-settings').hidden = false; }
 function toast(message) { const el = $('#toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), 4800); }
 function money(price, currency) {
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(price); }
@@ -58,6 +61,7 @@ function card(item) {
   } else missingPreview();
   article.append(visual);
   const body = node('div', 'card-body');
+  if (productOnSale(item)) body.append(node('span', 'sale-pill', 'On sale'));
   body.append(node('div', 'merchant', new URL(item.merchant_url || item.url).hostname.replace(/^www\./, '')));
   body.append(node('div', 'category-tag', `${item.category || 'Other'} · ${item.subcategory || 'Other'}`));
   const heading = node('h3');
@@ -68,30 +72,9 @@ function card(item) {
   if (item.price != null && item.currency) {
     prices.append(node('span', 'price', (item.price_kind === 'from' ? 'From ' : '') + money(item.price, item.currency)));
     prices.append(node('span', 'muted', item.price_kind === 'from' ? 'Lowest available offer on this product page' : 'Last observed price'));
-    if (item.baseline_price != null && item.price < item.baseline_price) {
-      const drop = Math.floor((1 - item.price / item.baseline_price) * 100 + 1e-8);
-      prices.append(node('span', 'watch', drop + '% below starting price'));
-    }
   } else prices.append(node('span', 'muted', 'Waiting for a price'));
   body.append(prices);
   const watching = item.watch_enabled !== 0;
-  const status = item.extraction_status;
-  const label = status === 'pending' ? 'Finding product details…'
-    : status === 'needs_variant' ? 'Choose the color or size to watch'
-    : status === 'out_of_stock' ? 'Out of stock · Price alerts waiting'
-    : status !== 'verified' ? 'Price could not be verified · Will retry'
-    : item.discount_percent != null ? `Watching · Alert at ${item.discount_percent}% off` : 'Watching your target price';
-  body.append(node('p', 'watch-status', watching ? label : 'Product alert paused'));
-  if (item.matched_variant && item.price_kind === 'from') body.append(node('p', 'fine', 'Lowest offer: ' + item.matched_variant));
-  if (item.variant_label) body.append(node('p', 'fine', 'Selected: ' + item.variant_label));
-  if (watching && item.baseline_price != null && item.currency) {
-    const targets = [];
-    if (item.discount_percent != null) targets.push(money(Math.floor(item.baseline_price * (100 - item.discount_percent) + 1e-8) / 100, item.currency));
-    if (item.target_price != null) targets.push(money(item.target_price, item.currency));
-    body.append(node('p', 'fine', 'Starting price ' + money(item.baseline_price, item.currency) + ' · Alert at ' + targets.join(' or ') + ' or less'));
-  }
-  const exactWatches = item.variant_watches || [];
-  if (exactWatches.length) body.append(node('p', 'fine', exactWatches.filter(w => w.watch_enabled).length + ' specific variant alerts enabled'));
   body.append(action('Price alerts · Product & variants', () => openAlerts(item), 'secondary wide'));
   if (item.note) body.append(node('p', 'note', `“${item.note}”`));
   if (item.observed_at) body.append(node('p', 'fine', `Price checked ${new Date(item.observed_at).toLocaleDateString()}. Confirm at the store.`));
@@ -235,10 +218,10 @@ function render() {
   const visible = items.filter(i =>
     (category === 'All' || i.category === category) &&
     (subcategory === 'All' || i.subcategory === subcategory) &&
-    (filter === 'all' || filter === 'drops' && i.price != null && i.baseline_price != null && i.price < i.baseline_price || filter === 'unpriced' && (i.price == null || i.extraction_status !== 'verified')) &&
+    (filter === 'all' || filter === 'drops' && productOnSale(i) || filter === 'unpriced' && (i.price == null || i.extraction_status !== 'verified')) &&
     (!search || [i.title, i.description, i.note, i.url, i.merchant_url].some(value => String(value || '').toLocaleLowerCase().includes(search))));
-  const counts = { all: items.length, drops: items.filter(i => i.price != null && i.baseline_price != null && i.price < i.baseline_price).length, unpriced: items.filter(i => i.price == null || i.extraction_status !== 'verified').length };
-  const labels = { all: 'All saved', drops: 'Price drops', unpriced: 'Waiting for price' };
+  const counts = { all: items.length, drops: items.filter(i => productOnSale(i)).length, unpriced: items.filter(i => i.price == null || i.extraction_status !== 'verified').length };
+  const labels = { all: 'All saved', drops: 'On sale', unpriced: 'Waiting for price' };
   document.querySelectorAll('.status-filters .filter').forEach(button => {
     button.textContent = labels[button.dataset.filter] + ' (' + counts[button.dataset.filter] + ')';
     button.setAttribute('aria-pressed', String(filter === button.dataset.filter));
@@ -246,20 +229,27 @@ function render() {
   $('#items').replaceChildren(...visible.map(card));
   $('#empty').hidden = items.length !== 0 || filter !== 'all';
   if (!visible.length && (items.length || filter !== 'all')) $('#items').append(node('p', 'empty-filter',
-    filter === 'drops' ? 'No price drops yet. We check watched products daily.' :
+    filter === 'drops' ? 'No products are 20% off yet. We’ll let you know when that changes.' :
     filter === 'unpriced' ? 'No products are waiting for a price in this view.' : 'No products match. Try another category or search.'));
 }
 
 async function load() {
   clearTimeout(refreshTimer);
   try {
-    const [list, settings] = await Promise.all([request('/api/items'), request('/api/config')]);
+    const [list, settings, inbox] = await Promise.all([request('/api/items'), request('/api/config'), request('/api/notifications')]);
+    const openedNotification = new URL(location.href).searchParams.get('notification');
+    if (openedNotification) {
+      await request('/api/notifications/read', {method:'POST',body:JSON.stringify({ids:[openedNotification]})});
+      const updated = await request('/api/notifications');
+      notifications = updated.notifications; renderNotifications(updated.unreadCount);
+    } else { notifications = inbox.notifications; renderNotifications(inbox.unreadCount); }
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
     items = list.items; config = settings; render(); showApp();
-    if (items.some(item => item.extraction_status === 'pending')) refreshTimer = setTimeout(load, 3000);
+    refreshTimer = setTimeout(() => { if (!document.hidden) load(); }, items.some(item => item.extraction_status === 'pending') ? 3000 : 60_000);
     $('#saving-onboarding').hidden = config.savingSetupComplete;
     updatePushUI();
     $('#assistant-section').hidden = !config.assistant;
-    const shared = new URL(location.href).searchParams.get('url');
+    const shared = new URL(location.href).searchParams.get('url') || new URL(location.href).searchParams.get('text');
     if (shared && !editor.open) { openEditor(null, shared); history.replaceState(null, '', '/'); }
     const highlighted = new URL(location.href).searchParams.get('item');
     if (highlighted && items.some(item => item.id === highlighted)) {
@@ -289,8 +279,9 @@ async function updatePushUI() {
   try {
     const registration = await navigator.serviceWorker.getRegistration('/');
     const subscription = await registration?.pushManager.getSubscription();
+    if (subscription && Notification.permission === 'granted') await request('/api/push-subscriptions', { method: 'POST', body: JSON.stringify(subscription.toJSON()) });
     $('#notification-nudge').hidden = Boolean(subscription);
-    status.textContent = subscription ? 'Price alerts are on for this phone.' : 'Turn on notifications so price drops appear on your phone.';
+    status.textContent = subscription ? 'Price alerts are on. Manage alerts, sounds and badges in iPhone Settings → Notifications → Keep an Eye.' : 'Turn on notifications so price drops appear on your phone.';
     $('#enable-push').hidden = Boolean(subscription);
     $('#disable-push').hidden = !subscription;
   } catch { status.textContent = 'Could not check notifications on this phone. Try refreshing.'; }
@@ -519,3 +510,33 @@ $('#browser-preview-form').addEventListener('submit', async event => {
     $('#browser-preview').close(); await load(); toast(result.message);
   } catch (error) { $('#browser-preview-error').textContent = error.message; $('#browser-preview-save').disabled = false; }
 });
+
+
+function renderNotifications(unreadCount) {
+  $('#open-notifications').textContent = unreadCount ? `Notifications (${unreadCount})` : 'Notifications';
+  $('#notification-list').replaceChildren(...notifications.map(entry => {
+    const row = node('div', entry.read_at ? 'notification-row' : 'notification-row unread');
+    const button = action(`${entry.title} · ${money(entry.price, entry.currency)}`, async () => {
+      try {
+        await request('/api/notifications/read', { method:'POST', body:JSON.stringify({ids:[entry.id]}) });
+        $('#notification-inbox').close();
+        history.replaceState(null, '', '/?item=' + encodeURIComponent(entry.item_id));
+        await load();
+      } catch (error) { toast(error.message); }
+    }, 'text-button');
+    row.append(button, node('p', 'fine', new Date(entry.created_at).toLocaleDateString())); return row;
+  }));
+  if (!notifications.length) $('#notification-list').append(node('p', '', 'Your discount notifications will appear here.'));
+  $('#read-notifications').hidden = !unreadCount;
+  if ('setAppBadge' in navigator) (unreadCount ? navigator.setAppBadge(unreadCount) : navigator.clearAppBadge()).catch(() => {});
+}
+$('#open-notifications').addEventListener('click', () => $('#notification-inbox').showModal());
+$('#close-notifications').addEventListener('click', () => $('#notification-inbox').close());
+$('#read-notifications').addEventListener('click', async () => {
+  try { await request('/api/notifications/read', {method:'POST',body:JSON.stringify({all:true})}); await load(); }
+  catch (error) { toast(error.message); }
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !app.hidden) load(); });
+navigator.serviceWorker?.addEventListener('message', event => { if (event.data?.type === 'price-alert' && !app.hidden) load(); });
+
+$('#copy-safari-capture').addEventListener('click', () => copySetup(shortcutCaptureScript));

@@ -23,3 +23,14 @@ dialog select{border:1px solid #d9ded4;background:#fff;color:#253f34;border-radi
 #alerts-editor{max-width:620px;padding:24px}#alerts-editor .alert-section{padding:1.2rem 0}#alerts-editor .fine{font-size:13px!important;line-height:1.6}#alerts-editor h2{overflow-wrap:anywhere}#alerts-editor .variant-watch{padding:16px}
 
 #browser-preview-review{overflow-wrap:anywhere}#browser-preview-confirmation input{width:auto;margin-right:8px}#browser-preview ol{padding-left:22px;font-size:13px;line-height:1.6}#browser-preview h2{font-size:24px}#browser-preview details{margin:18px 0}
+
+.sale-pill { display:inline-block; border-radius:999px; background:#e4eedb; color:#284727; padding:5px 12px; font-size:12px; font-weight:700; margin-bottom:10px; }
+.notification-row { border-bottom:1px solid #ddd9cd; padding:16px 4px; }
+.notification-row.unread { border-left:3px solid #365b37; padding-left:12px; }
+.notification-row .text-button { text-align:left; }
+.topbar-actions { flex-wrap:wrap; justify-content:flex-end; }
+@media (max-width:600px) {
+  .topbar { flex-direction:column; align-items:flex-start; gap:12px; }
+  .brand { white-space:nowrap; }
+  .topbar-actions { width:100%; justify-content:space-between; }
+}

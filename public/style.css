@@ -34,3 +34,15 @@ dialog select{border:1px solid #d9ded4;background:#fff;color:#253f34;border-radi
   .brand { white-space:nowrap; }
   .topbar-actions { width:100%; justify-content:space-between; }
 }
+
+.prices { gap:10px 14px; align-items:flex-end; }
+.price-reference,.price-current { display:flex; flex-direction:column; gap:3px; }
+.price-label { font-size:10px; font-weight:600; letter-spacing:.5px; text-transform:uppercase; color:#667369; }
+.price-reference s { color:#667369; font-size:14px; }
+.price-current .price { font-size:19px; line-height:1.2; }
+.price-discount { color:#315b32; background:#e4eedb; padding:4px 7px; border-radius:4px; font-size:12px; font-weight:700; }
+.price-context { flex-basis:100%; font-size:11px; }
+
+.availability-pill { display:inline-block; align-self:flex-start; border-radius:999px; padding:5px 12px; font-size:12px; font-weight:700; margin:0 6px 10px 0; }
+.sold-out { background:#f2e4df; color:#783c2d; }
+.availability-unknown { background:#eeeee8; color:#62695f; font-weight:400; }

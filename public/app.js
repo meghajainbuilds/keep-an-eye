@@ -13,7 +13,7 @@ let config = {};
 let refreshTimer;
 let notifications = [];
 const onSale = item => item.extraction_status === 'verified' && item.price > 0 && Math.max(item.baseline_price || 0, item.regular_price || 0) >= item.price / 0.8;
-const productOnSale = item => onSale(item) || (item.variant_watches || []).some(onSale);
+const productOnSale = item => item.extraction_status !== 'out_of_stock' && (onSale(item) || (item.variant_watches || []).some(onSale));
 
 async function request(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', ...options.headers } });
@@ -44,6 +44,40 @@ function action(label, callback, className = '') {
   button.type = 'button'; button.addEventListener('click', callback); return button;
 }
 
+function availabilityLabel(item) {
+  if (item.extraction_status === 'out_of_stock') return node('span', 'availability-pill sold-out', 'Sold out');
+  if (item.extraction_status !== 'verified') return node('span', 'availability-pill availability-unknown', 'Availability unknown');
+  return null;
+}
+
+function priceDetails(item) {
+  const prices = node('div', 'prices');
+  if (item.price == null || !item.currency) {
+    prices.append(node('span', 'muted', item.extraction_status === 'out_of_stock' ? 'Price unavailable' : 'Waiting for a price'));
+    return prices;
+  }
+  const verified = item.extraction_status === 'verified';
+  const regular = verified && item.regular_price > item.price ? item.regular_price : null;
+  const saved = verified && !regular && item.baseline_price > item.price ? item.baseline_price : null;
+  const reference = regular || saved;
+  if (reference) {
+    const previous = node('span', 'price-reference');
+    previous.append(node('span', 'price-label', regular ? 'Regular' : 'When saved'), node('s', '', money(reference, item.currency)));
+    prices.append(previous);
+  }
+  const current = node('span', 'price-current');
+  current.append(node('span', 'price-label', !verified ? 'Last observed' : regular ? 'Sale' : 'Current'),
+    node('span', 'price', (item.price_kind === 'from' ? 'From ' : '') + money(item.price, item.currency)));
+  prices.append(current);
+  if (reference) {
+    const percent = Math.floor((reference - item.price) / reference * 1000 + 1e-8) / 10;
+    prices.append(node('span', 'price-discount', (percent < 0.1 ? '<0.1' : percent) + (regular ? '% off' : '% less since saved')));
+  } else if (verified && !(item.regular_price > 0)) prices.append(node('span', 'price-context muted', 'Regular price unavailable'));
+  if (item.price_kind === 'from') prices.append(node('span', 'price-context muted', 'Lowest available offer on this product page'));
+  if (!verified && item.extraction_status !== 'out_of_stock') prices.append(node('span', 'price-context muted', 'Awaiting verification'));
+  return prices;
+}
+
 function card(item) {
   const article = node('article', 'card');
   article.dataset.itemId = item.id;
@@ -61,19 +95,16 @@ function card(item) {
   } else missingPreview();
   article.append(visual);
   const body = node('div', 'card-body');
-  if (productOnSale(item)) body.append(node('span', 'sale-pill', 'On sale'));
+  const availability = availabilityLabel(item);
+  if (availability) body.append(availability);
+  if (item.extraction_status !== 'out_of_stock' && productOnSale(item)) body.append(node('span', 'sale-pill', 'On sale'));
   body.append(node('div', 'merchant', new URL(item.merchant_url || item.url).hostname.replace(/^www\./, '')));
   body.append(node('div', 'category-tag', `${item.category || 'Other'} · ${item.subcategory || 'Other'}`));
   const heading = node('h3');
   const titleLink = node('a', 'product-link', item.title);
   titleLink.href = item.selected_url || item.url; titleLink.target = '_blank'; titleLink.rel = 'noopener noreferrer';
   heading.append(titleLink); body.append(heading);
-  const prices = node('div', 'prices');
-  if (item.price != null && item.currency) {
-    prices.append(node('span', 'price', (item.price_kind === 'from' ? 'From ' : '') + money(item.price, item.currency)));
-    prices.append(node('span', 'muted', item.price_kind === 'from' ? 'Lowest available offer on this product page' : 'Last observed price'));
-  } else prices.append(node('span', 'muted', 'Waiting for a price'));
-  body.append(prices);
+  body.append(priceDetails(item));
   const watching = item.watch_enabled !== 0;
   body.append(action('Price alerts · Product & variants', () => openAlerts(item), 'secondary wide'));
   if (item.note) body.append(node('p', 'note', `“${item.note}”`));
@@ -140,8 +171,10 @@ function openAlerts(item) {
   for (const watch of item.variant_watches || []) {
     const form = node('form', 'variant-watch');
     form.append(node('h4', '', watch.variant_label || watch.variant_id));
+    const availability = availabilityLabel(watch);
+    if (availability) form.append(availability);
     form.append(node('p', 'fine', watchDescription(watch, item.currency)));
-    if (watch.price != null) form.append(node('p', '', 'Last price: ' + money(watch.price, watch.currency)));
+    form.append(priceDetails(watch));
     const pct = percentField(watch.discount_percent), absolute = targetField(watch.target_price);
     const toggle = node('input'); toggle.type = 'checkbox'; toggle.checked = watch.watch_enabled !== 0;
     form.append(labelled('Enabled', toggle), labelled('Price drop (%)', pct), labelled('Or target price (optional)', absolute));
